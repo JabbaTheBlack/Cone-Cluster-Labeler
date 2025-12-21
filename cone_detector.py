@@ -243,31 +243,36 @@ class RandomForestConeDetector:
             pickle.dump(data, f)
         print(f'\n✓ Saved to {path}')
 
-    def save_cpp_ready(self, path='cone_detector_cpp.bin'):
+    def save_cpp_ready(self, path='cone_detector.bin'):
+        """Save model in raw binary format for C++"""
+        import struct
+        
         scaler_mean = self.scaler.mean_.astype(np.float32)
         scaler_std = self.scaler.scale_.astype(np.float32)
         
-        trees = []
-        for i in range(self.model.n_estimators):
-            tree = self.model.estimators_[i].tree_
-            trees.append({
-                'node_count': tree.node_count,
-                'children_left': tree.children_left.astype(np.int32),
-                'children_right': tree.children_right.astype(np.int32),
-                'feature': tree.feature.astype(np.int32),
-                'threshold': tree.threshold.astype(np.float32),
-                'value': tree.value.reshape(-1).astype(np.float32)
-            })
-        
-        data = {
-            'scaler_mean': scaler_mean,
-            'scaler_std': scaler_std,
-            'n_features': len(self.feature_names),
-            'n_estimators': self.model.n_estimators,
-            'trees': trees
-        }
         with open(path, 'wb') as f:
-            pickle.dump(data, f)
+            # Write scaler mean (12 floats)
+            f.write(scaler_mean.tobytes())
+            
+            # Write scaler std (12 floats)
+            f.write(scaler_std.tobytes())
+            
+            # Write number of trees
+            f.write(struct.pack('i', self.model.n_estimators))
+            
+            # Write each tree
+            for tree_obj in self.model.estimators_:
+                tree = tree_obj.tree_
+                f.write(struct.pack('i', tree.node_count))
+                
+                for i in range(tree.node_count):
+                    f.write(struct.pack('i', int(tree.feature[i])))
+                    f.write(struct.pack('f', float(tree.threshold[i])))
+                    f.write(struct.pack('i', int(tree.children_left[i])))
+                    f.write(struct.pack('i', int(tree.children_right[i])))
+                    f.write(struct.pack('f', float(tree.value[i][0][0])))
+                    f.write(struct.pack('f', float(tree.value[i][0][1])))
+        
         print(f'\n✓ C++ Ready: {path}')
 
     def load(self, path='cone_detector_rf.pkl'):
