@@ -9,6 +9,7 @@ import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import PointCloud2, PointField
 from std_msgs.msg import Header
+import std_msgs.msg
 import sensor_msgs_py.point_cloud2 as pc2
 
 
@@ -16,8 +17,9 @@ class ClusterLabelerNode(Node):
     def __init__(self):
         super().__init__('cluster_labeler')
         self.publisher = self.create_publisher(PointCloud2, '/labeling/current_cluster', 10)
-        self.clusters_dir = Path('/home/jabba/FRT/cone_clusters')
-        self.output_json = Path.home() / 'FRT/labeled_clusters.json'
+        self.timestamp_pub = self.create_publisher(std_msgs.msg.String, '/labeling/current_timestamp', 10)
+        self.clusters_dir = Path('/home/praksz/FRT2026/Cone-Labeler/Cone-Cluster-Labeler/Dataset/cone_clusters')
+        self.output_json = Path('/home/praksz/FRT2026/Cone-Labeler/Cone-Cluster-Labeler/Dataset/labeled_clusters.json')
         self.labels = {}
         
         if self.output_json.exists():
@@ -45,7 +47,7 @@ class ClusterLabelerNode(Node):
                     break
         return np.array(points, dtype=np.float32) if points else None
     
-    def publish_cluster(self, cloud):
+    def publish_cluster(self, cloud, timestamp_info=None):
         """Publish cluster to Foxglove."""
         xyz = cloud[:, :3]
         
@@ -59,11 +61,39 @@ class ClusterLabelerNode(Node):
         
         msg = pc2.create_cloud(header, fields, cloud)
         self.publisher.publish(msg)
+        
+        # Publish timestamp for bag synchronization
+        if timestamp_info:
+            ts_msg = std_msgs.msg.String()
+            ts_msg.data = json.dumps(timestamp_info)
+            self.timestamp_pub.publish(ts_msg)
     
-    def print_stats(self, cloud):
+    def extract_timestamp_info(self, filename):
+        """Extract scan time and frame info from filename.
+        Expected format: scan_<timestamp>_frame_<frame_num>_cluster_<id>.pcd
+        Returns a dict or None if not matched.
+        """
+        try:
+            import re
+            m = re.match(r"scan_([^_]+)_frame_([^_]+)_cluster_([^_]+)\.pcd", filename)
+            if m:
+                return {
+                    "scan_timestamp": m.group(1),
+                    "frame_number": m.group(2),
+                    "cluster_id": m.group(3),
+                }
+        except Exception:
+            pass
+        return None
+
+    def print_stats(self, cloud, timestamp_info=None):
         """Print cluster stats."""
         xyz = cloud[:, :3]
         intensity = cloud[:, 3]
+        
+        if timestamp_info:
+            print(f'  Scan Time: {timestamp_info.get("scan_timestamp", "?")}')
+            print(f'  Frame: {timestamp_info.get("frame_number", "?")} | Cluster: {timestamp_info.get("cluster_id", "?")}')
         print(f'  Points: {len(xyz):,}')
         print(f'  X: [{xyz[:,0].min():.2f}, {xyz[:,0].max():.2f}]')
         print(f'  Y: [{xyz[:,1].min():.2f}, {xyz[:,1].max():.2f}]')
@@ -120,6 +150,9 @@ class ClusterLabelerNode(Node):
             
             print(f'\n[{idx+1}/{len(cluster_files)}] {filename}')
             
+            # Extract timestamp info from filename
+            timestamp_info = self.extract_timestamp_info(filename)
+            
             # Load cluster
             cloud = self.load_pcd_binary(str(pcd_file))
             if cloud is None:
@@ -127,13 +160,23 @@ class ClusterLabelerNode(Node):
                 idx += 1
                 continue
             
-            self.print_stats(cloud)
+            self.print_stats(cloud, timestamp_info)
             print('Publishing to Foxglove...')
             print('Label: (b/Y/u/n/s/q) >> ', end='', flush=True)
             
             labeled = False
             while not labeled:
+                # Stream the current cluster continuously
                 self.publish_cluster(cloud)
+                
+                # Publish timestamp continuously for synchronization
+                if timestamp_info:
+                    try:
+                        ts_msg = std_msgs.msg.String()
+                        ts_msg.data = json.dumps(timestamp_info)
+                        self.timestamp_pub.publish(ts_msg)
+                    except Exception:
+                        pass
                 
                 if select.select([sys.stdin], [], [], 0.05)[0]:
                     key = sys.stdin.read(1)

@@ -294,8 +294,8 @@ def main():
     import argparse
     
     parser = argparse.ArgumentParser(description='Random Forest Cone Detector')
-    parser.add_argument('--labels', default='~/FRT/labeled_clusters.json')
-    parser.add_argument('--clusters', default='/home/jabba/FRT/cone_clusters')
+    parser.add_argument('--labels', default='~/FRT2026/Cone-Labeler/Cone-Labeler/Dataset/labeled_clusters.json')
+    parser.add_argument('--clusters', default='/home/praksz/FRT2026/Cone-Labeler/Cone-Labeler/Dataset/cone_clusters')
     parser.add_argument('--output', default='cone_detector_rf.pkl')
     
     args = parser.parse_args()
