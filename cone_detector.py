@@ -75,48 +75,119 @@ def extract_features(cluster_points):
 # DATASET BUILDER
 # ============================================================================
 
-class DatasetBuilder:
-    def __init__(self, labels_json, clusters_dir='/tmp/cone_clusters'):
-        self.labels_json = Path(labels_json).expanduser()
-        self.clusters_dir = Path(clusters_dir)
-        
-        with open(self.labels_json) as f:
-            self.labels = json.load(f)
-        
+class MultiTrackDatasetBuilder:
+    """Combines labeled clusters from multiple track folders into one dataset."""
+    
+    def __init__(self, base_dataset_path):
+        """
+        Args:
+            base_dataset_path: Path to Dataset folder (contains Acceleration/, Skidpad/, Autocross/)
+        """
+        self.base_path = Path(base_dataset_path).expanduser()
+        self.tracks = {}
         self.X = []
         self.y = []
+        self.track_stats = {}
+        
+        # Discover all track folders with labeled_clusters.json
+        self._discover_tracks()
+    
+    def _discover_tracks(self):
+        """Find all track folders with labeled_clusters.json files."""
+        for track_folder in self.base_path.iterdir():
+            if not track_folder.is_dir():
+                continue
+            
+            labels_path = track_folder / 'labeled_clusters.json'
+            if labels_path.exists():
+                track_name = track_folder.name
+                with open(labels_path) as f:
+                    labels = json.load(f)
+                self.tracks[track_name] = {
+                    'path': track_folder,
+                    'labels': labels,
+                    'label_count': len(labels)
+                }
+                print(f'✓ Found {track_name}: {len(labels)} labels')
+        
+        if not self.tracks:
+            raise FileNotFoundError(f'No labeled_clusters.json found in {self.base_path}')
     
     def build(self):
-        """Extract features from labeled clusters."""
-        print(f'Building dataset from {len(self.labels)} labels...')
+        """Extract features from all labeled clusters across all tracks."""
+        print(f'\n📊 Building dataset from {len(self.tracks)} tracks...\n')
         
-        for filename, label in tqdm(self.labels.items()):
-            pcd_path = self.clusters_dir / filename
+        total_labels = sum(t['label_count'] for t in self.tracks.values())
+        pbar = tqdm(total=total_labels, desc='Processing clusters')
+        
+        for track_name, track_data in self.tracks.items():
+            track_path = track_data['path']
+            labels = track_data['labels']
             
-            if not pcd_path.exists():
-                continue
+            X_track, y_track = [], []
+            missing = 0
             
-            cluster = load_pcd_binary(str(pcd_path))
-            if cluster is None or len(cluster) < 3:
-                continue
+            for filename, label in labels.items():
+                pcd_path = track_path / filename
+                
+                if not pcd_path.exists():
+                    missing += 1
+                    pbar.update(1)
+                    continue
+                
+                cluster = load_pcd_binary(str(pcd_path))
+                if cluster is None or len(cluster) < 3:
+                    pbar.update(1)
+                    continue
+                
+                features = extract_features(cluster)
+                X_track.append(features)
+                y_track.append(1 if label['is_cone'] else 0)
+                pbar.update(1)
             
-            features = extract_features(cluster)
-            self.X.append(features)
-            self.y.append(1 if label['is_cone'] else 0)
+            X_track = np.array(X_track, dtype=np.float32)
+            y_track = np.array(y_track, dtype=np.int64)
+            
+            # Store track stats
+            self.track_stats[track_name] = {
+                'samples': len(X_track),
+                'cones': int(np.sum(y_track)),
+                'non_cones': int(len(y_track) - np.sum(y_track)),
+                'missing': missing
+            }
+            
+            self.X.extend(X_track)
+            self.y.extend(y_track)
+        
+        pbar.close()
         
         self.X = np.array(self.X, dtype=np.float32)
         self.y = np.array(self.y, dtype=np.int64)
         
-        if len(self.X) == 0:
-            print('⚠️  No valid clusters found!')
-            return np.array([]), np.array([])
-        
-        print(f'\n✓ Dataset: {len(self.X)} samples')
-        if len(self.y) > 0:
-            print(f'  Cones: {sum(self.y)} ({100*sum(self.y)/len(self.y):.1f}%)')
-            print(f'  Non-cones: {len(self.y)-sum(self.y)} ({100*(len(self.y)-sum(self.y))/len(self.y):.1f}%)')
+        # Print statistics
+        self._print_stats()
         
         return self.X, self.y
+    
+    def _print_stats(self):
+        """Print dataset statistics."""
+        print('\n' + '='*70)
+        print('📈 DATASET STATISTICS')
+        print('='*70)
+        
+        for track_name, stats in self.track_stats.items():
+            print(f'\n{track_name}:')
+            print(f'  Samples: {stats["samples"]}')
+            print(f'  Cones: {stats["cones"]} ({100*stats["cones"]/(stats["samples"]+1e-6):.1f}%)')
+            print(f'  Non-cones: {stats["non_cones"]} ({100*stats["non_cones"]/(stats["samples"]+1e-6):.1f}%)')
+            if stats["missing"] > 0:
+                print(f'  ⚠️  Missing PCDs: {stats["missing"]}')
+        
+        print(f'\n{"-"*70}')
+        print(f'✓ COMBINED DATASET: {len(self.X)} total samples')
+        print(f'  Cones: {sum(self.y)} ({100*sum(self.y)/len(self.y):.1f}%)')
+        print(f'  Non-cones: {len(self.y)-sum(self.y)} ({100*(len(self.y)-sum(self.y))/len(self.y):.1f}%)')
+        print('='*70 + '\n')
 
 
 # ============================================================================
@@ -152,7 +223,7 @@ class RandomForestConeDetector:
             cv=5,   
             scoring='f1',  
             n_jobs=-1,
-            verbose=2
+            verbose=0
         )
         
         grid_search.fit(X_train, y_train)
@@ -243,31 +314,36 @@ class RandomForestConeDetector:
             pickle.dump(data, f)
         print(f'\n✓ Saved to {path}')
 
-    def save_cpp_ready(self, path='cone_detector_cpp.bin'):
+    def save_cpp_ready(self, path='cone_detector.bin'):
+        """Save model in raw binary format for C++"""
+        import struct
+        
         scaler_mean = self.scaler.mean_.astype(np.float32)
         scaler_std = self.scaler.scale_.astype(np.float32)
         
-        trees = []
-        for i in range(self.model.n_estimators):
-            tree = self.model.estimators_[i].tree_
-            trees.append({
-                'node_count': tree.node_count,
-                'children_left': tree.children_left.astype(np.int32),
-                'children_right': tree.children_right.astype(np.int32),
-                'feature': tree.feature.astype(np.int32),
-                'threshold': tree.threshold.astype(np.float32),
-                'value': tree.value.reshape(-1).astype(np.float32)
-            })
-        
-        data = {
-            'scaler_mean': scaler_mean,
-            'scaler_std': scaler_std,
-            'n_features': len(self.feature_names),
-            'n_estimators': self.model.n_estimators,
-            'trees': trees
-        }
         with open(path, 'wb') as f:
-            pickle.dump(data, f)
+            # Write scaler mean (12 floats)
+            f.write(scaler_mean.tobytes())
+            
+            # Write scaler std (12 floats)
+            f.write(scaler_std.tobytes())
+            
+            # Write number of trees
+            f.write(struct.pack('i', self.model.n_estimators))
+            
+            # Write each tree
+            for tree_obj in self.model.estimators_:
+                tree = tree_obj.tree_
+                f.write(struct.pack('i', tree.node_count))
+                
+                for i in range(tree.node_count):
+                    f.write(struct.pack('i', int(tree.feature[i])))
+                    f.write(struct.pack('f', float(tree.threshold[i])))
+                    f.write(struct.pack('i', int(tree.children_left[i])))
+                    f.write(struct.pack('i', int(tree.children_right[i])))
+                    f.write(struct.pack('f', float(tree.value[i][0][0])))
+                    f.write(struct.pack('f', float(tree.value[i][0][1])))
+        
         print(f'\n✓ C++ Ready: {path}')
 
     def load(self, path='cone_detector_rf.pkl'):
@@ -294,13 +370,14 @@ def main():
     import argparse
     
     parser = argparse.ArgumentParser(description='Random Forest Cone Detector')
-    parser.add_argument('--labels', default='~/FRT2026/Cone-Labeler/Cone-Labeler/Dataset/labeled_clusters.json')
-    parser.add_argument('--clusters', default='/home/praksz/FRT2026/Cone-Labeler/Cone-Labeler/Dataset/cone_clusters')
+    parser.add_argument('--labels', default='~/FRT/labeled_clusters.json')
+    parser.add_argument('--dataset', default='/home/jabba/Cone-Cluster-Labeler/Dataset',
+                       help='Path to Dataset folder (contains Acceleration/, Skidpad/, Autocross/)')
     parser.add_argument('--output', default='cone_detector_rf.pkl')
     
     args = parser.parse_args()
     
-    builder = DatasetBuilder(args.labels, args.clusters)
+    builder = MultiTrackDatasetBuilder(args.dataset)
     X, y = builder.build()
     
     if len(X) < 50:
