@@ -19,7 +19,7 @@ class ClusterLabelerNode(Node):
         self.publisher = self.create_publisher(PointCloud2, '/labeling/current_cluster', 10)
         self.timestamp_pub = self.create_publisher(std_msgs.msg.String, '/labeling/current_timestamp', 10)
         self.clusters_dir = Path('/home/praksz/FRT2026/Cone-Labeler/Cone-Cluster-Labeler/Dataset/cone_clusters')
-        self.output_json = Path('/home/praksz/FRT2026/Cone-Labeler/Cone-Cluster-Labeler/Dataset/labeled_clusters.json')
+        self.output_json = Path('/home/praksz/FRT2026/Cone-Labeler/Cone-Cluster-Labeler/Dataset/Skidpad/labeled_clusters.json')
         self.labels = {}
         
         if self.output_json.exists():
