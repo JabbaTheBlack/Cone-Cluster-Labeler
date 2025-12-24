@@ -269,6 +269,10 @@ class RandomForestConeDetector:
         print(f'  Recall:    {test_recall:.2%}')
         print(f'  F1 Score:  {test_f1_score:.2%}')
         
+        logSaver = LogSaver(log_dir='logs')
+        logSaver.save(X_train_scaled, X_test_scaled, y_train, y_test,
+                     train_accuracy, test_acc, test_precision, test_recall, test_f1_score,
+                     self.feature_names, self.model.feature_importances_, self.best_params)
 
         self.visualize_confusion_matrix(y_test, y_test_pred)
         self.visualize_feature_importances()
@@ -283,9 +287,12 @@ class RandomForestConeDetector:
         plt.ylabel('True Label')
         plt.xlabel('Predicted Label')
         plt.tight_layout()
-        plt.savefig('confusion_matrix.png', dpi=300, bbox_inches='tight')
-        plt.show()
-        print('✓ Saved: confusion_matrix.png')
+
+        script_dir = Path(__file__).parent
+        (script_dir / 'figures').mkdir(parents=True, exist_ok=True)
+        plt.savefig(script_dir / 'figures' / 'confusion_matrix.png', dpi=300, bbox_inches='tight')
+        print('✓ Saved: figures/confusion_matrix.png')
+        
 
     def visualize_feature_importances(self):
         importances = self.model.feature_importances_
@@ -299,9 +306,11 @@ class RandomForestConeDetector:
         plt.title('Feature Importances')
         plt.xlabel('Importance Score')
         plt.tight_layout()
-        plt.savefig('feature_importances.png', dpi=300, bbox_inches='tight')
-        plt.show()
-        print('✓ Saved: feature_importances.png')
+
+        script_dir = Path(__file__).parent
+        (script_dir / 'figures').mkdir(parents=True, exist_ok=True)
+        plt.savefig(script_dir / 'figures' / 'feature_importances.png', dpi=300, bbox_inches='tight')
+        print('✓ Saved: figures/feature_importances.png')
 
     def save(self, path='cone_detector_rf.pkl'):
         """Save model."""
@@ -363,6 +372,38 @@ class RandomForestConeDetector:
         return predictions, probabilities
 
 # ============================================================================
+# Log Saver
+# ============================================================================
+class LogSaver:
+    def __init__(self, log_dir='logs'):
+        self.log_dir = Path(log_dir).expanduser()
+        self.log_dir.mkdir(parents=True, exist_ok=True)
+        self.log_file = self.log_dir / 'training_log.txt'
+    
+    def save(self, X_train, X_test, y_train, y_test, train_acc, test_acc, precision, recall, f1, 
+             features, importances, best_params=None):
+        results = {
+            'dataset_size': len(X_train) + len(X_test),
+            'train_size': len(X_train),
+            'test_size': len(X_test),
+            'cones_total': int(np.sum(y_train) + np.sum(y_test)),
+            'non_cones_total': int(len(y_train) + len(y_test) - np.sum(y_train) - np.sum(y_test)),
+            'train_accuracy': float(train_acc),
+            'test_accuracy': float(test_acc),
+            'precision': float(precision),
+            'recall': float(recall),
+            'f1_score': float(f1),
+            'best_params': best_params,
+            'feature_importances': dict(zip(features, importances.tolist()))
+        }
+        
+        with open(self.log_file, 'a') as f:
+            json.dump(results, f)
+            f.write('\n\n')  # Separate entries
+        
+        print(f'Training log saved: {self.log_file}')
+        return self.log_file
+# ============================================================================
 # MAIN
 # ============================================================================
 
@@ -370,12 +411,23 @@ def main():
     import argparse
     
     parser = argparse.ArgumentParser(description='Random Forest Cone Detector')
-    parser.add_argument('--labels', default='~/FRT/labeled_clusters.json')
-    parser.add_argument('--dataset', default='/home/jabba/Cone-Cluster-Labeler/Dataset',
+    script_dir = Path(__file__).parent
+
+    default_dataset = script_dir / 'Dataset'
+    default_output = script_dir / 'models' / 'cone_detector_rf.pkl'
+    default_output_bin = script_dir / 'models' / 'cone_detector.bin'
+
+    parser.add_argument('--dataset', default=str(default_dataset),
                        help='Path to Dataset folder (contains Acceleration/, Skidpad/, Autocross/)')
-    parser.add_argument('--output', default='cone_detector_rf.pkl')
+    parser.add_argument('--output', default=str(default_output))
+    parser.add_argument('--output-bin', default=str(default_output_bin))
     
     args = parser.parse_args()
+
+    Path(args.output).parent.mkdir(parents=True, exist_ok=True)
+    Path(args.output_bin).parent.mkdir(parents=True, exist_ok=True)
+
+    builder = MultiTrackDatasetBuilder(args.dataset)
     
     builder = MultiTrackDatasetBuilder(args.dataset)
     X, y = builder.build()
@@ -387,7 +439,7 @@ def main():
     model = RandomForestConeDetector()
     model.train(X, y)
     model.save(args.output)
-    model.save_cpp_ready('cone_detector.bin')
+    model.save_cpp_ready(args.output_bin)
     
     print('\n🚀 Model trained and saved!')
 
