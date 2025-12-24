@@ -17,6 +17,8 @@ Two-node system for labeling cone clusters with synchronized bag frames:
 
 ## Usage
 
+Copy the .mcap bag to the Dataset folder.
+
 ### Terminal 1: Start bag frame publisher
 ```bash
 cd /home/praksz/FRT2026/Cone-Labeler/Cone-Cluster-Labeler
@@ -56,3 +58,7 @@ python3 -m pip install mcap mcap-ros2-support --break-system-packages
 # Option B: Install into project venv (used via PYTHONPATH)
 ./cone_detector_env/bin/python -m pip install mcap mcap-ros2-support --break-system-packages
 ```
+
+## Testing
+There is a basic test program. To use it, first run the bag_frame_publisher.
+
