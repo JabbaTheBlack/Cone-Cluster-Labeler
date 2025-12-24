@@ -20,7 +20,7 @@ class ClusterLabelerNode(Node):
         self.timestamp_pub = self.create_publisher(std_msgs.msg.String, '/labeling/current_timestamp', 10)
 
         script_dir = Path(__file__).parent
-        self.clusters_dir = script_dir / 'Dataset' / 'Acceleration'
+        self.clusters_dir = script_dir / 'Dataset' / 'Autocross'
         self.output_json = self.clusters_dir / 'labeled_clusters.json'
 
         self.labels = {}
@@ -28,6 +28,10 @@ class ClusterLabelerNode(Node):
         if self.output_json.exists():
             with open(self.output_json) as f:
                 self.labels = json.load(f)
+        else:
+            self.output_json.parent.mkdir(parents=True, exist_ok=True)
+            with open(self.output_json, 'w') as f:
+                json.dump({}, f)
         
         self.get_logger().info('Cluster Labeler ready')
     
@@ -54,7 +58,7 @@ class ClusterLabelerNode(Node):
         """Publish cluster to Foxglove."""
         xyz = cloud[:, :3]
         
-        header = Header(stamp=self.get_clock().now().to_msg(), frame_id='lidar')
+        header = Header(stamp=self.get_clock().now().to_msg(), frame_id='os_sensor')
         fields = [
             PointField(name='x', offset=0, datatype=PointField.FLOAT32, count=1),
             PointField(name='y', offset=4, datatype=PointField.FLOAT32, count=1),
