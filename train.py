@@ -98,6 +98,7 @@ class MultiTrackDatasetBuilder:
             if not track_folder.is_dir():
                 continue
             
+            # Check direct labeled_clusters.json
             labels_path = track_folder / 'labeled_clusters.json'
             if labels_path.exists():
                 track_name = track_folder.name
@@ -109,7 +110,24 @@ class MultiTrackDatasetBuilder:
                     'label_count': len(labels)
                 }
                 print(f'✓ Found {track_name}: {len(labels)} labels')
-        
+                continue
+            
+            # Check subfolders (handles AutoX_7 case)
+            for subfolder in track_folder.iterdir():
+                if subfolder.is_dir():
+                    sub_labels_path = subfolder / 'labeled_clusters.json'
+                    if sub_labels_path.exists():
+                        track_name = f"{track_folder.name}/{subfolder.name}"
+                        with open(sub_labels_path) as f:
+                            labels = json.load(f)
+                        self.tracks[track_name] = {
+                            'path': subfolder,  # Use subfolder for PCD lookup
+                            'labels': labels,
+                            'label_count': len(labels)
+                        }
+                        print(f'✓ Found {track_name}: {len(labels)} labels')
+                        break
+    
         if not self.tracks:
             raise FileNotFoundError(f'No labeled_clusters.json found in {self.base_path}')
     
