@@ -34,7 +34,7 @@ class BagFramePublisher(Node):
         self.current_frame = None  # Currently selected frame to publish continuously
         
         # Timer to republish current frame
-        self.timer = self.create_timer(0.05, self.timer_callback)  # 20 Hz
+        self.timer = self.create_timer(0.10, self.timer_callback)  # 10 Hz
         
         self.get_logger().info('Bag Frame Publisher ready')
     
