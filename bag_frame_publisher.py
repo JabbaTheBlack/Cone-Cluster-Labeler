@@ -28,18 +28,18 @@ class BagFramePublisher(Node):
         # Path to mcap bag
         self.bag_path = Path('/home/praksz/FRT2026/Cone-Labeler/Cone-Cluster-Labeler/Dataset/skidpad_transformed.mcap')
         
-        # Cache for bag messages (indexed by frame number)
-        self.frames_list = []  # Ordered list of frames
+        # Cache for bag messages indexed by timestamp
+        self.frames_by_timestamp = {}  # timestamp -> PointCloud2 message
         self.cache_loaded = False
         self.current_frame = None  # Currently selected frame to publish continuously
         
         # Timer to republish current frame
-        self.timer = self.create_timer(0.10, self.timer_callback)  # 10 Hz
+        self.timer = self.create_timer(0.20, self.timer_callback)  # 5 Hz
         
         self.get_logger().info('Bag Frame Publisher ready')
     
     def load_bag_cache(self):
-        """Load all pointcloud messages from bag into ordered list."""
+        """Load all pointcloud messages from bag indexed by timestamp."""
         if self.cache_loaded:
             return
         
@@ -47,16 +47,20 @@ class BagFramePublisher(Node):
         
         try:
             with open(self.bag_path, 'rb') as f:
-                reader = make_reader(f)
+                reader = make_reader(f, decoder_factories=[DecoderFactory()])
                 
-                for schema, channel, message in reader.iter_messages():
-                    # Collect PointCloud2 messages in order
+                for schema, channel, message, decoded in reader.iter_decoded_messages():
+                    # Collect PointCloud2 messages indexed by header timestamp
                     if schema.name == 'sensor_msgs/msg/PointCloud2':
-                        # Deserialize raw message data to proper ROS2 type
+                        # Get header timestamp in the same format as cluster filenames
+                        # Format: sec * 1000000 + nsec // 1000 (microseconds)
+                        header_ts = decoded.header.stamp.sec * 1000000 + decoded.header.stamp.nanosec // 1000
+                        
+                        # Deserialize raw message data to proper ROS2 type for publishing
                         ros_msg = deserialize_message(message.data, PointCloud2)
-                        self.frames_list.append(ros_msg)
+                        self.frames_by_timestamp[header_ts] = ros_msg
                 
-                self.get_logger().info(f'Loaded {len(self.frames_list)} frames from bag')
+                self.get_logger().info(f'Loaded {len(self.frames_by_timestamp)} frames from bag (indexed by timestamp)')
                 self.cache_loaded = True
         
         except Exception as e:
@@ -67,35 +71,54 @@ class BagFramePublisher(Node):
         if self.current_frame is not None:
             self.publisher.publish(self.current_frame)
     
+    def find_closest_frame(self, target_ts):
+        """Find the frame with the closest timestamp."""
+        if not self.frames_by_timestamp:
+            return None
+        
+        # First try exact match
+        if target_ts in self.frames_by_timestamp:
+            return self.frames_by_timestamp[target_ts], target_ts, 0
+        
+        # Find closest timestamp
+        closest_ts = min(self.frames_by_timestamp.keys(), key=lambda ts: abs(ts - target_ts))
+        diff = abs(closest_ts - target_ts)
+        return self.frames_by_timestamp[closest_ts], closest_ts, diff
+    
     def timestamp_callback(self, msg):
-        """Receive timestamp info and publish matching frame by frame number."""
+        """Receive timestamp info and publish matching frame by timestamp."""
         try:
             timestamp_info = json.loads(msg.data)
-            frame_number = timestamp_info.get('frame_number')
+            scan_timestamp = timestamp_info.get('scan_timestamp')
             
-            if not frame_number:
-                self.get_logger().warn('No frame_number in timestamp info')
+            if not scan_timestamp:
+                self.get_logger().warn('No scan_timestamp in timestamp info')
                 return
             
             # Load bag cache on first request
             if not self.cache_loaded:
                 self.load_bag_cache()
             
-            # Convert frame number to index (0-based)
+            # Convert scan timestamp to integer
             try:
-                frame_idx = int(frame_number)
+                target_ts = int(scan_timestamp)
             except:
-                self.get_logger().warn(f'Invalid frame_number: {frame_number}')
+                self.get_logger().warn(f'Invalid scan_timestamp: {scan_timestamp}')
                 return
             
-            # Publish frame if in range
-            if 0 <= frame_idx < len(self.frames_list):
-                frame_msg = self.frames_list[frame_idx]
+            # Find matching frame by timestamp
+            result = self.find_closest_frame(target_ts)
+            if result:
+                frame_msg, matched_ts, diff = result
                 self.current_frame = frame_msg  # Store for continuous publishing
                 self.publisher.publish(frame_msg)
-                self.get_logger().info(f'Published frame #{frame_number}')
+                
+                if diff == 0:
+                    self.get_logger().info(f'Published frame (exact match, ts={target_ts})')
+                else:
+                    self.get_logger().info(f'Published frame (closest match, diff={diff}µs)')
             else:
-                self.get_logger().warn(f'Frame #{frame_number} out of range (0-{len(self.frames_list)-1})')
+                self.get_logger().warn(f'No frame found for timestamp {target_ts}')
         
         except Exception as e:
             self.get_logger().error(f'Error processing timestamp: {e}')

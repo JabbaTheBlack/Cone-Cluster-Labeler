@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
 Script to filter frame files in cone_clusters folder:
-- Keep frames 0-27 (already labeled)
 - Keep every 10th frame starting from 250 (250, 260, 270, 280, ...)
 - Delete all other frames
 """
@@ -20,22 +19,17 @@ def extract_frame_number(filename):
 def should_keep_frame(frame_num):
     """
     Determine if a frame should be kept based on filtering rules:
-    - Keep frames 0-27 (already labeled)
     - Keep frames 250, 260, 270, ... (every 10th starting from 250)
     """
-    # Keep frames 0-27
-    if frame_num <= 27:
-        return True
-    
-    # Keep every 10th frame starting from 250
-    if frame_num >= 250 and (frame_num - 250) % 10 == 0:
+    # Keep every 10th frame 
+    if frame_num  % 10 == 0:
         return True
     
     return False
 
 def main():
     # Path to cone_clusters directory
-    cone_clusters_dir = Path(__file__).parent / "Dataset" / "cone_clusters"
+    cone_clusters_dir = Path(__file__).parent / "Dataset" / "Skidpad_2" / "cone_clusters"
     
     if not cone_clusters_dir.exists():
         print(f"Error: Directory {cone_clusters_dir} does not exist!")

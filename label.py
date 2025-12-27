@@ -20,8 +20,8 @@ class ClusterLabelerNode(Node):
         self.timestamp_pub = self.create_publisher(std_msgs.msg.String, '/labeling/current_timestamp', 10)
 
         script_dir = Path(__file__).parent
-        self.clusters_dir = script_dir / 'Dataset' / 'Autocross'
-        self.output_json = self.clusters_dir / 'labeled_clusters.json'
+        self.clusters_dir = script_dir / 'Dataset' / 'Skidpad_2' / 'cone_clusters'
+        self.output_json = script_dir / 'Dataset' / 'Skidpad_2' / 'labeled_clusters.json'
 
         self.labels = {}
         
