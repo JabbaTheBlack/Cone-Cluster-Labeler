@@ -93,43 +93,26 @@ class MultiTrackDatasetBuilder:
         self._discover_tracks()
     
     def _discover_tracks(self):
-        """Find all track folders with labeled_clusters.json files."""
-        for track_folder in self.base_path.iterdir():
-            if not track_folder.is_dir():
-                continue
+        """Find all track folders with labeled_clusters.json files recursively."""
+        self.tracks = {}
+        
+        for labels_path in self.base_path.rglob('labeled_clusters.json'):
+            track_folder = labels_path.parent
+            track_name = str(track_folder.relative_to(self.base_path)).strip('/')
             
-            # Check direct labeled_clusters.json
-            labels_path = track_folder / 'labeled_clusters.json'
-            if labels_path.exists():
-                track_name = track_folder.name
-                with open(labels_path) as f:
-                    labels = json.load(f)
-                self.tracks[track_name] = {
-                    'path': track_folder,
-                    'labels': labels,
-                    'label_count': len(labels)
-                }
-                print(f'✓ Found {track_name}: {len(labels)} labels')
-                continue
+            with open(labels_path) as f:
+                labels = json.load(f)
             
-            # Check subfolders (handles AutoX_7 case)
-            for subfolder in track_folder.iterdir():
-                if subfolder.is_dir():
-                    sub_labels_path = subfolder / 'labeled_clusters.json'
-                    if sub_labels_path.exists():
-                        track_name = f"{track_folder.name}/{subfolder.name}"
-                        with open(sub_labels_path) as f:
-                            labels = json.load(f)
-                        self.tracks[track_name] = {
-                            'path': subfolder,  # Use subfolder for PCD lookup
-                            'labels': labels,
-                            'label_count': len(labels)
-                        }
-                        print(f'✓ Found {track_name}: {len(labels)} labels')
-                        break
-    
+            self.tracks[track_name] = {
+                'path': track_folder,
+                'labels': labels,
+                'label_count': len(labels)
+            }
+            print(f'✓ Found {track_name}: {len(labels)} labels')
+        
         if not self.tracks:
             raise FileNotFoundError(f'No labeled_clusters.json found in {self.base_path}')
+
     
     def build(self):
         """Extract features from all labeled clusters across all tracks."""
@@ -309,6 +292,7 @@ class RandomForestConeDetector:
         script_dir = Path(__file__).parent
         (script_dir / 'figures').mkdir(parents=True, exist_ok=True)
         plt.savefig(script_dir / 'figures' / 'confusion_matrix.png', dpi=300, bbox_inches='tight')
+        plt.close()
         print('✓ Saved: figures/confusion_matrix.png')
         
 
@@ -447,7 +431,6 @@ def main():
 
     builder = MultiTrackDatasetBuilder(args.dataset)
     
-    builder = MultiTrackDatasetBuilder(args.dataset)
     X, y = builder.build()
     
     if len(X) < 50:
