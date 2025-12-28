@@ -4,18 +4,18 @@
   "non_cones_total": 1207,
   "models_tested": [
     {
-      "model_name": "cone_detector",
+      "model_name": "cone_detector_2371",
       "test_accuracy": 0.9890341628005062,
       "precision": 0.9863247863247864,
       "recall": 0.9914089347079038,
       "f1_score": 0.988860325621251
     },
     {
-      "model_name": "cone_detector_2371",
-      "test_accuracy": 0.9890341628005062,
-      "precision": 0.9863247863247864,
-      "recall": 0.9914089347079038,
-      "f1_score": 0.988860325621251
+      "model_name": "cone_detector",
+      "test_accuracy": 0.9873471109236609,
+      "precision": 0.985445205479452,
+      "recall": 0.988831615120275,
+      "f1_score": 0.9871355060034306
     },
     {
       "model_name": "cone_detector_1082",
