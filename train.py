@@ -205,39 +205,67 @@ class RandomForestConeDetector:
                         'linearity', 'planarity', 'volume']
     
     def gridsearch(self, X_train, y_train):
-
-        param_grid = {
-            'n_estimators': [100, 200, 300, 400],
-            'max_depth': [10, 15, 20, 25, 30, None],
-            'min_samples_split': [2, 5, 10, 15, 20],
-            'min_samples_leaf': [1, 2, 4, 5, 6, 10],
+        
+        rf = RandomForestClassifier(random_state=42)
+    
+        # Phase 1: COARSE (12 combos = fast)
+        print('🔍 Phase 1: Coarse search...')
+        coarse_grid = {
+            'n_estimators': [20, 70, 100],
+            'max_depth': [15, 25, None],
+            'min_samples_split': [5, 15],
+            'min_samples_leaf': [2, 6],
+            'max_features': ['sqrt']
+        }
+        
+        coarse_search = GridSearchCV(rf, coarse_grid, cv=5, scoring='f1', n_jobs=-1, verbose=1)
+        coarse_search.fit(X_train, y_train)
+        best_coarse = coarse_search.best_params_
+        print(f'  Coarse best F1: {coarse_search.best_score_:.4f} → {best_coarse}')
+        
+        # Phase 2: MEDIUM around coarse winner (48 combos)
+        print('🔍 Phase 2: Medium refinement...')
+        med_grid = {
+            'n_estimators': list(range(max(10, best_coarse['n_estimators']-20), 
+                                    min(110, best_coarse['n_estimators']+21), 10)),
+            'max_depth': [best_coarse['max_depth']] if best_coarse['max_depth'] else [None],
+            'min_samples_split': [best_coarse['min_samples_split']],
+            'min_samples_leaf': [best_coarse['min_samples_leaf']],
+            'max_features': ['sqrt']
+        }
+        
+        med_search = GridSearchCV(rf, med_grid, cv=5, scoring='f1', n_jobs=-1, verbose=1)
+        med_search.fit(X_train, y_train)
+        best_med = med_search.best_params_
+        print(f'  Medium best F1: {med_search.best_score_:.4f} → {best_med}')
+        
+        # Phase 3: FINE around medium winner (18 combos)
+        print('🔍 Phase 3: Fine tuning...')
+        fine_grid = {
+            'n_estimators': list(range(max(10, best_med['n_estimators']-10), 
+                                    min(110, best_med['n_estimators']+11), 5)),
+            'max_depth': [None, 20, 25, 30] if best_med['max_depth'] is None else 
+                        list(range(max(10, best_med['max_depth']-5), min(31, best_med['max_depth']+6))),
+            'min_samples_split': [max(2, best_med['min_samples_split']-2), 
+                                best_med['min_samples_split'], 
+                                min(20, best_med['min_samples_split']+3)],
+            'min_samples_leaf': [max(1, best_med['min_samples_leaf']-1), 
+                                best_med['min_samples_leaf'], 
+                                min(10, best_med['min_samples_leaf']+2)],
             'max_features': ['sqrt', 'log2']
         }
         
-
-        rf = RandomForestClassifier(random_state=42)
+        fine_search = GridSearchCV(rf, fine_grid, cv=5, scoring='f1', n_jobs=-1, verbose=1)
+        fine_search.fit(X_train, y_train)
         
-        # GridSearchCV
-        grid_search = GridSearchCV(
-            estimator=rf, 
-            param_grid=param_grid,
-            cv=5,   
-            scoring='f1',  
-            n_jobs=-1,
-            verbose=0
-        )
+        print(f'\n✓ Progressive GridSearch Complete!')
+        print(f'  Final Best F1: {fine_search.best_score_:.4f}')
+        print(f'  Final Best Params: {fine_search.best_params_}')
         
-        grid_search.fit(X_train, y_train)
-        
-        print(f'\n✓ GridSearch Complete!')
-        print(f'  Best F1 Score: {grid_search.best_score_:.4f}')
-        print(f'  Best Params: {grid_search.best_params_}')
-        
-        self.best_params = grid_search.best_params_
-        self.model = grid_search.best_estimator_
-        
+        self.best_params = fine_search.best_params_
+        self.model = fine_search.best_estimator_
         return self.model
-    
+
     def train(self, X, y, use_gridsearch=True):
         """Train model."""
         # Split data training: 80% test: 20%
@@ -380,7 +408,7 @@ class LogSaver:
     def __init__(self, log_dir='logs'):
         self.log_dir = Path(log_dir).expanduser()
         self.log_dir.mkdir(parents=True, exist_ok=True)
-        self.log_file = self.log_dir / 'training_log.txt'
+        self.log_file = self.log_dir / 'n_estimator_log.txt'
     
     def save(self, X_train, X_test, y_train, y_test, train_acc, test_acc, precision, recall, f1, 
              features, importances, best_params=None):
