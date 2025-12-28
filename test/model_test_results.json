@@ -1,0 +1,49 @@
+{
+  "test_dataset_size": 2371,
+  "cones_total": 1164,
+  "non_cones_total": 1207,
+  "models_tested": [
+    {
+      "model_name": "cone_detector",
+      "test_accuracy": 0.9890341628005062,
+      "precision": 0.9863247863247864,
+      "recall": 0.9914089347079038,
+      "f1_score": 0.988860325621251
+    },
+    {
+      "model_name": "cone_detector_2371",
+      "test_accuracy": 0.9890341628005062,
+      "precision": 0.9863247863247864,
+      "recall": 0.9914089347079038,
+      "f1_score": 0.988860325621251
+    },
+    {
+      "model_name": "cone_detector_1082",
+      "test_accuracy": 0.9544495993251793,
+      "precision": 0.9714285714285714,
+      "recall": 0.9347079037800687,
+      "f1_score": 0.9527145359019265
+    },
+    {
+      "model_name": "cone_detector_1354",
+      "test_accuracy": 0.9544495993251793,
+      "precision": 0.9714285714285714,
+      "recall": 0.9347079037800687,
+      "f1_score": 0.9527145359019265
+    },
+    {
+      "model_name": "cone_detector_745",
+      "test_accuracy": 0.9122733024040489,
+      "precision": 0.9353369763205829,
+      "recall": 0.8823024054982818,
+      "f1_score": 0.9080459770114943
+    },
+    {
+      "model_name": "cone_detector_841",
+      "test_accuracy": 0.9114297764656263,
+      "precision": 0.9667318982387475,
+      "recall": 0.8487972508591065,
+      "f1_score": 0.9039341262580055
+    }
+  ]
+}
