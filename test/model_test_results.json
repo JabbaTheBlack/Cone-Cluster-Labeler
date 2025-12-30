@@ -1,5 +1,6 @@
 {
   "test_dataset_size": 2371,
+  "test_features": 12,
   "cones_total": 1164,
   "non_cones_total": 1207,
   "models_tested": [
@@ -11,7 +12,14 @@
       "f1_score": 0.988860325621251
     },
     {
-      "model_name": "cone_detector",
+      "model_name": "cone_detector_70estimator",
+      "test_accuracy": 0.9877688738928722,
+      "precision": 0.9854576561163387,
+      "recall": 0.9896907216494846,
+      "f1_score": 0.9875696528075439
+    },
+    {
+      "model_name": "cone_detector_60estimator",
       "test_accuracy": 0.9873471109236609,
       "precision": 0.985445205479452,
       "recall": 0.988831615120275,
@@ -44,6 +52,13 @@
       "precision": 0.9667318982387475,
       "recall": 0.8487972508591065,
       "f1_score": 0.9039341262580055
+    },
+    {
+      "model_name": "cone_detector",
+      "test_accuracy": 0.509067903838043,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1_score": 0.0
     }
   ]
 }

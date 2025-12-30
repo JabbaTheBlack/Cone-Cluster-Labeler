@@ -90,54 +90,52 @@ class MultiTrackDatasetBuilder:
                 print(f'  {p}')
     
     def build(self):
-      if not self.tracks:
-          print('❌ No tracks found!')
-          return np.array([]), np.array([])
+        if not self.tracks:
+            print('❌ No tracks found!')
+            return np.array([]), np.array([])
           
-      print(f'\n📊 Building test dataset from {len(self.tracks)} tracks...')
-      total_labels = sum(t['label_count'] for t in self.tracks.values())
-      pbar = tqdm(total=total_labels, desc='Processing clusters')
+        print(f'\n📊 Building test dataset from {len(self.tracks)} tracks...')
+        total_labels = sum(t['label_count'] for t in self.tracks.values())
+        pbar = tqdm(total=total_labels, desc='Processing clusters')
       
-      for track_name, track_data in self.tracks.items():
-          track_path = track_data['path']
-          labels = track_data['labels']
+        for track_name, track_data in self.tracks.items():
+            track_path = track_data['path']
+            labels = track_data['labels']
           
-          X_track, y_track = [], []
-          missing = 0
+            X_track, y_track = [], []
+            missing = 0
           
-          for filename, label in labels.items():
-              pcd_path = track_path / filename
-              if not pcd_path.exists():
-                  missing += 1
-                  pbar.update(1)
-                  continue
+            for filename, label in labels.items():
+                pcd_path = track_path / filename
+                if not pcd_path.exists():
+                    missing += 1
+                    pbar.update(1)
+                    continue
               
-              cluster = load_pcd_binary(str(pcd_path))
-              if cluster is None or len(cluster) < 3:
-                  pbar.update(1)
-                  continue
+                cluster = load_pcd_binary(str(pcd_path))
+                if cluster is None or len(cluster) < 3:
+                    pbar.update(1)
+                    continue
               
-              features = extract_features(cluster)
-              X_track.append(features)
-              y_track.append(1 if label['is_cone'] else 0)
-              pbar.update(1)
+                features = extract_features(cluster)
+                X_track.append(features)
+                y_track.append(1 if label['is_cone'] else 0)
+                pbar.update(1)
           
-          # CRITICAL FIX: Append to GLOBAL lists, not local!
-          self.X.extend(X_track)
-          self.y.extend(y_track)
+            self.X.extend(X_track)
+            self.y.extend(y_track)
           
-          print(f'{track_name}: {len(X_track)}/{len(labels)} samples (missing: {missing})')
+            print(f'{track_name}: {len(X_track)}/{len(labels)} samples (missing: {missing})')
       
-      pbar.close()
-      self.X = np.array(self.X, dtype=np.float32) if self.X else np.array([])
-      self.y = np.array(self.y, dtype=np.int64) if self.y else np.array([])
-      print(f'✓ Final test dataset: {len(self.X)} samples')
-      return self.X, self.y
+        pbar.close()
+        self.X = np.array(self.X, dtype=np.float32) if self.X else np.array([])
+        self.y = np.array(self.y, dtype=np.int64) if self.y else np.array([])
+        print(f'✓ Final test dataset: {len(self.X)} samples, {self.X.shape[1] if self.X.size else 0} features')
+        return self.X, self.y
 
-
-# [CppModelLoader class stays exactly the same - no changes needed]
 class CppModelLoader:
     def __init__(self):
+        self.n_features = 0
         self.scaler_mean = None
         self.scaler_std = None
         self.n_trees = 0
@@ -146,67 +144,103 @@ class CppModelLoader:
     def load_bin(self, path):
         print(f'Loading C++ model: {path}')
         with open(path, 'rb') as f:
-            self.scaler_mean = np.frombuffer(f.read(12*4), dtype=np.float32)
-            self.scaler_std = np.frombuffer(f.read(12*4), dtype=np.float32)
-            self.n_trees = struct.unpack('i', f.read(4))[0]
+            file_content = f.read()
+        
+        offset = 0
+        
+        # Detect format: try reading n_features, if reasonable (1-20) use new format
+        try:
+            potential_n_features = struct.unpack_from('i', file_content, offset)[0]
+            if 1 <= potential_n_features <= 20:
+                self.n_features = potential_n_features
+                offset += 4
+                format_type = "new"
+            else:
+                self.n_features = 12
+                format_type = "old"
+        except:
+            self.n_features = 12
+            format_type = "old"
+        
+        print(f'  Format: {format_type}, Features: {self.n_features}')
+        
+        # Read scaler mean
+        self.scaler_mean = np.frombuffer(file_content[offset:offset + self.n_features*4], dtype=np.float32)
+        offset += self.n_features * 4
+        
+        # Read scaler std
+        self.scaler_std = np.frombuffer(file_content[offset:offset + self.n_features*4], dtype=np.float32)
+        offset += self.n_features * 4
+        
+        # Read n_trees
+        self.n_trees = struct.unpack_from('i', file_content, offset)[0]
+        offset += 4
+        
+        # Read trees
+        for _ in range(self.n_trees):
+            node_count = struct.unpack_from('i', file_content, offset)[0]
+            offset += 4
+            tree = {
+                'node_count': node_count,
+                'feature': np.empty(node_count, dtype=np.int32),
+                'threshold': np.empty(node_count, dtype=np.float32),
+                'children_left': np.empty(node_count, dtype=np.int32),
+                'children_right': np.empty(node_count, dtype=np.int32),
+                'value_cone': np.empty(node_count, dtype=np.float32),
+                'value_noncone': np.empty(node_count, dtype=np.float32)
+            }
             
-            for _ in range(self.n_trees):
-                node_count = struct.unpack('i', f.read(4))[0]
-                tree = {
-                    'node_count': node_count,
-                    'feature': np.empty(node_count, dtype=np.int32),
-                    'threshold': np.empty(node_count, dtype=np.float32),
-                    'children_left': np.empty(node_count, dtype=np.int32),
-                    'children_right': np.empty(node_count, dtype=np.int32),
-                    'value_cone': np.empty(node_count, dtype=np.float32),
-                    'value_noncone': np.empty(node_count, dtype=np.float32)
-                }
-                
-                for i in range(node_count):
-                    tree['feature'][i] = struct.unpack('i', f.read(4))[0]
-                    tree['threshold'][i] = struct.unpack('f', f.read(4))[0]
-                    tree['children_left'][i] = struct.unpack('i', f.read(4))[0]
-                    tree['children_right'][i] = struct.unpack('i', f.read(4))[0]
-                    tree['value_cone'][i] = struct.unpack('f', f.read(4))[0]
-                    tree['value_noncone'][i] = struct.unpack('f', f.read(4))[0]
-                
-                self.trees.append(tree)
-        print(f'✓ Loaded {self.n_trees} trees')
+            for i in range(node_count):
+                tree['feature'][i] = struct.unpack_from('i', file_content, offset)[0]; offset += 4
+                tree['threshold'][i] = struct.unpack_from('f', file_content, offset)[0]; offset += 4
+                tree['children_left'][i] = struct.unpack_from('i', file_content, offset)[0]; offset += 4
+                tree['children_right'][i] = struct.unpack_from('i', file_content, offset)[0]; offset += 4
+                tree['value_cone'][i] = struct.unpack_from('f', file_content, offset)[0]; offset += 4
+                tree['value_noncone'][i] = struct.unpack_from('f', file_content, offset)[0]; offset += 4
+            
+            self.trees.append(tree)
+        print(f'✓ Loaded {self.n_trees} trees ({self.n_features} features)')
     
     def predict_proba(self, X):
-      X_scaled = (X - self.scaler_mean) / (self.scaler_std + 1e-8)
-      n_samples = X_scaled.shape[0]
-      proba_cone = np.zeros(n_samples)
-      
-      for tree in self.trees:
-          votes_cone = np.zeros(n_samples)
-          
-          for i in range(n_samples):
-              node = 0
-              while node < tree['node_count']:
-                  feat_idx = tree['feature'][node]
-                  # FIXED: Proper leaf detection
-                  if tree['children_left'][node] == tree['children_right'][node]:
-                      # FIXED: Swap value order - [noncone, cone]
-                      votes_cone[i] = tree['value_noncone'][node]  # was value_cone
-                      break
-                  
-                  if X_scaled[i, feat_idx] <= tree['threshold'][node]:
-                      node = tree['children_left'][node]
-                  else:
-                      node = tree['children_right'][node]
-          
-          proba_cone += votes_cone
-      
-      proba_cone /= self.n_trees
-      proba_noncone = 1 - proba_cone
-      return np.stack([proba_noncone, proba_cone], axis=1)  # [noncone, cone]
+        # Pad/truncate to match model features
+        if X.shape[1] < self.n_features:
+            X = np.pad(X, ((0,0),(0,self.n_features-X.shape[1])), mode='constant')
+        elif X.shape[1] > self.n_features:
+            X = X[:, :self.n_features]
+        
+        X_scaled = (X - self.scaler_mean) / (self.scaler_std + 1e-8)
+        n_samples = X_scaled.shape[0]
+        proba_cone = np.zeros(n_samples)
+        
+        for tree in self.trees:
+            votes_cone = np.zeros(n_samples)
+            
+            for i in range(n_samples):
+                node = 0
+                while node < tree['node_count']:
+                    feat_idx = tree['feature'][node]
+                    # EXACT ORIGINAL LOGIC: children_left == children_right detects leaf
+                    if tree['children_left'][node] == tree['children_right'][node]:
+                        # EXACT ORIGINAL LOGIC: use value_noncone
+                        votes_cone[i] = tree['value_noncone'][node]
+                        break
+                    
+                    if X_scaled[i, feat_idx] <= tree['threshold'][node]:
+                        node = tree['children_left'][node]
+                    else:
+                        node = tree['children_right'][node]
+            
+            proba_cone += votes_cone
+        
+        proba_cone /= self.n_trees
+        proba_noncone = 1 - proba_cone
+        return np.stack([proba_noncone, proba_cone], axis=1)
 
-    
     def predict(self, X):
         proba = self.predict_proba(X)
         return (proba[:, 1] > 0.5).astype(np.int64)
 
+# [evaluate_model and main unchanged - copy from your current version]
 def evaluate_model(model, X_test, y_test, name):
     if len(X_test) == 0:
         return {'name': name, 'acc': 0, 'prec': 0, 'rec': 0, 'f1': 0}
@@ -230,7 +264,7 @@ def evaluate_model(model, X_test, y_test, name):
 
 def main():
     script_dir = Path(__file__).parent
-    ROOT_DIR = script_dir.parent  # Go up to ~/Cone-Cluster-Labeler
+    ROOT_DIR = script_dir.parent
     
     print(f'Root dir: {ROOT_DIR}')
     print(f'../Dataset exists: { (ROOT_DIR / "Dataset").exists() }')
@@ -242,10 +276,9 @@ def main():
         print('❌ No test data! Check Dataset structure.')
         return
     
-    # Look in BOTH test/models and root models/
     model_dirs = [
-        script_dir / 'models',      # ./test/models/
-        ROOT_DIR / 'models'         # ../models/
+        script_dir / 'models',
+        ROOT_DIR / 'models'
     ]
     
     all_models = []
@@ -273,38 +306,41 @@ def main():
         except Exception as e:
             print(f'⚠️  Failed to load {model_path.name}: {e}')
     
+    if not results:
+        print('❌ No models evaluated successfully.')
+        return
+    
     results.sort(key=lambda x: x['f1'], reverse=True)
     print(f'\n🏆 BEST MODEL: {results[0]["name"]} (F1: {results[0]["f1"]:.4f})')
     
+    (ROOT_DIR / 'test').mkdir(parents=True, exist_ok=True)
     results_df = pd.DataFrame(results)
     results_df.to_csv(ROOT_DIR / 'test' / 'model_comparison.csv', index=False)
     print('✓ Saved: model_comparison.csv')
     
-    # NEW: JSON format matching training logs
     test_results = {
         'test_dataset_size': len(X_test),
+        'test_features': int(X_test.shape[1]),
         'cones_total': int(np.sum(y_test)),
         'non_cones_total': int(len(y_test) - np.sum(y_test)),
         'models_tested': []
     }
     
     for r in results:
-        model_info = {
+        test_results['models_tested'].append({
             'model_name': r['name'],
             'test_accuracy': float(r['acc']),
             'precision': float(r['prec']),
             'recall': float(r['rec']),
             'f1_score': float(r['f1'])
-        }
-        test_results['models_tested'].append(model_info)
+        })
     
     json_path = ROOT_DIR / 'test' / 'model_test_results.json'
     with open(json_path, 'w') as f:
         json.dump(test_results, f, indent=2)
     print(f'✓ Saved JSON: {json_path}')
     
-    # Print top 3 in your preferred format
-    print('\n📊 TOP MODELS ON 2371 DATASET:')
+    print('\n📊 TOP MODELS:')
     print('name,acc,prec,rec,f1')
     for r in results[:3]:
         print(f'{r["name"]},{r["acc"]:.4f},{r["prec"]:.4f},{r["rec"]:.4f},{r["f1"]:.4f}')
