@@ -1,60 +1,67 @@
 {
   "test_dataset_size": 2371,
-  "test_features": 12,
+  "test_features": 8,
   "cones_total": 1164,
   "non_cones_total": 1207,
   "models_tested": [
     {
-      "model_name": "cone_detector_2371",
-      "test_accuracy": 0.9890341628005062,
-      "precision": 0.9863247863247864,
-      "recall": 0.9914089347079038,
-      "f1_score": 0.988860325621251
+      "model_name": "cone_detector_8features",
+      "test_accuracy": 0.9962041332770982,
+      "precision": 0.9957081545064378,
+      "recall": 0.9965635738831615,
+      "f1_score": 0.9961356805495921
     },
     {
-      "model_name": "cone_detector_70estimator",
-      "test_accuracy": 0.9877688738928722,
-      "precision": 0.9854576561163387,
-      "recall": 0.9896907216494846,
-      "f1_score": 0.9875696528075439
-    },
-    {
-      "model_name": "cone_detector_60estimator",
-      "test_accuracy": 0.9873471109236609,
-      "precision": 0.985445205479452,
-      "recall": 0.988831615120275,
-      "f1_score": 0.9871355060034306
-    },
-    {
-      "model_name": "cone_detector_1082",
-      "test_accuracy": 0.9544495993251793,
-      "precision": 0.9714285714285714,
-      "recall": 0.9347079037800687,
-      "f1_score": 0.9527145359019265
-    },
-    {
-      "model_name": "cone_detector_1354",
-      "test_accuracy": 0.9544495993251793,
-      "precision": 0.9714285714285714,
-      "recall": 0.9347079037800687,
-      "f1_score": 0.9527145359019265
+      "model_name": "cone_detector_7features",
+      "test_accuracy": 0.9852382960776044,
+      "precision": 0.9771766694843618,
+      "recall": 0.993127147766323,
+      "f1_score": 0.9850873455475074
     },
     {
       "model_name": "cone_detector_745",
-      "test_accuracy": 0.9122733024040489,
-      "precision": 0.9353369763205829,
-      "recall": 0.8823024054982818,
-      "f1_score": 0.9080459770114943
+      "test_accuracy": 0.5082243778996204,
+      "precision": 0.3333333333333333,
+      "recall": 0.001718213058419244,
+      "f1_score": 0.003418803418803419
+    },
+    {
+      "model_name": "cone_detector_1082",
+      "test_accuracy": 0.509067903838043,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1_score": 0.0
+    },
+    {
+      "model_name": "cone_detector_1354",
+      "test_accuracy": 0.509067903838043,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1_score": 0.0
+    },
+    {
+      "model_name": "cone_detector_2371",
+      "test_accuracy": 0.509067903838043,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1_score": 0.0
+    },
+    {
+      "model_name": "cone_detector_60estimator",
+      "test_accuracy": 0.509067903838043,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1_score": 0.0
+    },
+    {
+      "model_name": "cone_detector_70estimator",
+      "test_accuracy": 0.509067903838043,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1_score": 0.0
     },
     {
       "model_name": "cone_detector_841",
-      "test_accuracy": 0.9114297764656263,
-      "precision": 0.9667318982387475,
-      "recall": 0.8487972508591065,
-      "f1_score": 0.9039341262580055
-    },
-    {
-      "model_name": "cone_detector",
       "test_accuracy": 0.509067903838043,
       "precision": 0.0,
       "recall": 0.0,
