@@ -52,23 +52,15 @@ def extract_features(cluster_points):
     volume = (height + 1e-6) * (width + 1e-6) * (depth + 1e-6) 
     density = num_points / volume # Point per volume cones are not as dense
     
-    center = xyz.mean(axis=0)
-    distances = np.linalg.norm(xyz - center, axis=1) # Average distance from the centroid
-    compactness = np.std(distances) / (np.mean(distances) + 1e-6) # Std deviation of distances
-    
-    # Average intensity of the cluster. Average of the min and max for each frame, oppossed to cap from 1 to 255 -> will work with different LiDARs
-    intensity_mean = float(intensity.mean()) 
+    # Average intensity of the cluster. Average of the min and max for each frame, oppossed to cap from 1 to 255 -> will work with different LiDARs 
     intensity_std = float(intensity.std())
     
     cov = np.cov(xyz.T) # Covariance matrix of the points
     eigenvalues = np.linalg.eigvalsh(cov) 
-    linearity = (eigenvalues[2] - eigenvalues[1]) / (eigenvalues[2] + 1e-6) # Cones are not a line
-    planarity = (eigenvalues[1] - eigenvalues[0]) / (eigenvalues[2] + 1e-6) # Cones re not a 2D plane
     
     return np.array([
-        height, width, depth, aspect_ratio, num_points,
-        density, compactness, intensity_mean, intensity_std,
-        linearity, planarity, volume
+        height, width, depth, aspect_ratio,
+        density, intensity_std, volume
     ], dtype=np.float32)
 
 # ============================================================================
@@ -200,22 +192,71 @@ class RandomForestConeDetector:
         self.scaler = StandardScaler()
         self.model = None
         self.best_params = None
-        self.feature_names = ['height', 'width', 'depth', 'aspect_ratio', 'num_points',
-                        'density', 'compactness', 'intensity_mean', 'intensity_std',
-                        'linearity', 'planarity', 'volume']
+        self.feature_names = ['height', 'width', 'depth', 'aspect_ratio',
+                        'density', 'intensity_std', 'volume']
     
+    def cross_validate(self, X_scaled, y, cv_folds=5):
+        """5-fold cross-validation on full dataset."""
+        from sklearn.model_selection import cross_val_score, cross_validate
+        print(f'\n🔍 {cv_folds}-Fold Cross-Validation (F1 scoring)...')
+        
+        rf_temp = RandomForestClassifier(**self.best_params, random_state=42, n_jobs=-1)
+        cv_results = cross_validate(rf_temp, X_scaled, y, cv=cv_folds,
+                                  scoring=['accuracy', 'precision', 'recall', 'f1'],
+                                  return_train_score=True)
+        
+        print(f'  CV F1:     {cv_results["test_f1"].mean():.4f} ± {cv_results["test_f1"].std():.4f}')
+        print(f'  CV Acc:    {cv_results["test_accuracy"].mean():.4f} ± {cv_results["test_accuracy"].std():.4f}')
+        print(f'  CV Prec:   {cv_results["test_precision"].mean():.4f} ± {cv_results["test_precision"].std():.4f}')
+        print(f'  CV Recall: {cv_results["test_recall"].mean():.4f} ± {cv_results["test_recall"].std():.4f}')
+        print(f'  Train F1:  {cv_results["train_f1"].mean():.4f} (overfitting check)')
+        
+        return cv_results
+
     def gridsearch(self, X_train, y_train):
         
+        # param_grid = {
+        #     'n_estimators': list(range(10, 110, 10)),
+        #     'max_depth': [10, 15, 20, 25, 30, None],
+        #     'min_samples_split': [2, 5, 10, 15, 20],
+        #     'min_samples_leaf': [1, 2, 4, 5, 6, 10],
+        #     'max_features': ['sqrt', 'log2']
+        # }
+
+
+        # rf = RandomForestClassifier(random_state=42)
+
+        # # GridSearchCV
+        # grid_search = GridSearchCV(
+        #     estimator=rf, 
+        #     param_grid=param_grid,
+        #     cv=5,   
+        #     scoring='f1',  
+        #     n_jobs=-1,
+        #     verbose=0
+        # )
+
+        # grid_search.fit(X_train, y_train)
+
+        # print(f'\n✓ GridSearch Complete!')
+        # print(f'  Best F1 Score: {grid_search.best_score_:.4f}')
+        # print(f'  Best Params: {grid_search.best_params_}')
+
+        # self.best_params = grid_search.best_params_
+        # self.model = grid_search.best_estimator_
+
+        # return self.model
+
         rf = RandomForestClassifier(random_state=42)
     
-        # Phase 1: COARSE (12 combos = fast)
-        print('🔍 Phase 1: Coarse search...')
+        # Phase 1: COARSE (higher estimators + your full param space)
+        print('🔍 Phase 1: Coarse search (100-400 estimators)...')
         coarse_grid = {
-            'n_estimators': [20, 70, 100],
-            'max_depth': [15, 25, None],
-            'min_samples_split': [5, 15],
-            'min_samples_leaf': [2, 6],
-            'max_features': ['sqrt']
+            'n_estimators': [10, 50 ,100, 150],
+            'max_depth': [5, 10, 15, 25, None],
+            'min_samples_split': [2, 5, 15],
+            'min_samples_leaf': [1, 2, 6],
+            'max_features': ['sqrt', 'log2']
         }
         
         coarse_search = GridSearchCV(rf, coarse_grid, cv=5, scoring='f1', n_jobs=-1, verbose=1)
@@ -223,15 +264,16 @@ class RandomForestConeDetector:
         best_coarse = coarse_search.best_params_
         print(f'  Coarse best F1: {coarse_search.best_score_:.4f} → {best_coarse}')
         
-        # Phase 2: MEDIUM around coarse winner (48 combos)
+        # Phase 2: MEDIUM around coarse winner (±30 range)
         print('🔍 Phase 2: Medium refinement...')
+        n_est_start = max(10, best_coarse['n_estimators'] - 30)
+        n_est_end = min(450, best_coarse['n_estimators'] + 31)
         med_grid = {
-            'n_estimators': list(range(max(10, best_coarse['n_estimators']-20), 
-                                    min(110, best_coarse['n_estimators']+21), 10)),
-            'max_depth': [best_coarse['max_depth']] if best_coarse['max_depth'] else [None],
+            'n_estimators': list(range(n_est_start, n_est_end, 10)),
+            'max_depth': [best_coarse['max_depth']] if best_coarse['max_depth'] is not None else [None, 15, 25],
             'min_samples_split': [best_coarse['min_samples_split']],
             'min_samples_leaf': [best_coarse['min_samples_leaf']],
-            'max_features': ['sqrt']
+            'max_features': ['sqrt', 'log2']
         }
         
         med_search = GridSearchCV(rf, med_grid, cv=5, scoring='f1', n_jobs=-1, verbose=1)
@@ -239,19 +281,20 @@ class RandomForestConeDetector:
         best_med = med_search.best_params_
         print(f'  Medium best F1: {med_search.best_score_:.4f} → {best_med}')
         
-        # Phase 3: FINE around medium winner (18 combos)
+        # Phase 3: FINE around medium winner (±15 range)
         print('🔍 Phase 3: Fine tuning...')
+        n_est_fine_start = max(10, best_med['n_estimators'] - 15)
+        n_est_fine_end = min(450, best_med['n_estimators'] + 16)
         fine_grid = {
-            'n_estimators': list(range(max(10, best_med['n_estimators']-10), 
-                                    min(110, best_med['n_estimators']+11), 5)),
-            'max_depth': [None, 20, 25, 30] if best_med['max_depth'] is None else 
-                        list(range(max(10, best_med['max_depth']-5), min(31, best_med['max_depth']+6))),
-            'min_samples_split': [max(2, best_med['min_samples_split']-2), 
+            'n_estimators': list(range(n_est_fine_start, n_est_fine_end, 5)),
+            'max_depth': [None, 10, 15, 20, 25, 30] if best_med['max_depth'] is None else 
+                        list(range(max(5, best_med['max_depth']-5), min(31, best_med['max_depth']+6))),
+            'min_samples_split': [max(2, best_med['min_samples_split']-3), 
                                 best_med['min_samples_split'], 
-                                min(20, best_med['min_samples_split']+3)],
-            'min_samples_leaf': [max(1, best_med['min_samples_leaf']-1), 
+                                min(20, best_med['min_samples_split']+4)],
+            'min_samples_leaf': [max(1, best_med['min_samples_leaf']-2), 
                                 best_med['min_samples_leaf'], 
-                                min(10, best_med['min_samples_leaf']+2)],
+                                min(10, best_med['min_samples_leaf']+3)],
             'max_features': ['sqrt', 'log2']
         }
         
@@ -280,8 +323,15 @@ class RandomForestConeDetector:
         X_train_scaled = self.scaler.fit_transform(X_train)
         X_test_scaled = self.scaler.transform(X_test)
         
+        print("Starting gridsearch...")
         self.gridsearch(X_train_scaled, y_train)
-  
+
+        X_full_scaled = self.scaler.transform(X)
+        print("Cross validating...")
+        cv_results = self.cross_validate(X_full_scaled, y)
+
+        self.plot_feature_correlation(X)
+
         # Evaluate
         y_train_pred = self.model.predict(X_train_scaled)
         y_test_pred = self.model.predict(X_test_scaled)
@@ -301,11 +351,28 @@ class RandomForestConeDetector:
         logSaver = LogSaver(log_dir='logs')
         logSaver.save(X_train_scaled, X_test_scaled, y_train, y_test,
                      train_accuracy, test_acc, test_precision, test_recall, test_f1_score,
-                     self.feature_names, self.model.feature_importances_, self.best_params)
+                     self.feature_names, self.model.feature_importances_, self.best_params, cv_results)
 
         self.visualize_confusion_matrix(y_test, y_test_pred)
         self.visualize_feature_importances()
             
+    def plot_feature_correlation(self, X):
+        """Plot feature correlation matrix."""
+        feat_df = pd.DataFrame(X, columns=self.feature_names)
+        corr = feat_df.corr()
+        
+        plt.figure(figsize=(10, 8))
+        sns.heatmap(corr, annot=True, cmap='coolwarm', center=0, fmt='.2f')
+        plt.title('Feature Correlation Matrix')
+        plt.tight_layout()
+        
+        script_dir = Path(__file__).parent
+        (script_dir / 'figures').mkdir(parents=True, exist_ok=True)
+        plt.savefig(script_dir / 'figures' / 'feature_correlation.png', dpi=300, bbox_inches='tight')
+        plt.close()
+        print('✓ Saved: figures/feature_correlation.png')
+
+
     def visualize_confusion_matrix(self, y_true, y_pred):
         cm = confusion_matrix(y_true, y_pred)
         plt.figure(figsize=(6, 5))
@@ -352,38 +419,43 @@ class RandomForestConeDetector:
         with open(path, 'wb') as f:
             pickle.dump(data, f)
         print(f'\n✓ Saved to {path}')
-
+ 
     def save_cpp_ready(self, path='cone_detector.bin'):
         """Save model in raw binary format for C++"""
         import struct
         
         scaler_mean = self.scaler.mean_.astype(np.float32)
         scaler_std = self.scaler.scale_.astype(np.float32)
+        n_features = len(scaler_mean)  # 7
+        
+        print(f'Saving {n_features}-feature model to {path}')
         
         with open(path, 'wb') as f:
-            # Write scaler mean (12 floats)
+            # HEADER: n_features (int32)
+            f.write(struct.pack('i', n_features))
+            
+            # Scaler mean (7 floats)
             f.write(scaler_mean.tobytes())
             
-            # Write scaler std (12 floats)
+            # Scaler std (7 floats)  
             f.write(scaler_std.tobytes())
             
-            # Write number of trees
+            # n_trees (int32)
             f.write(struct.pack('i', self.model.n_estimators))
             
-            # Write each tree
+            # Trees
             for tree_obj in self.model.estimators_:
                 tree = tree_obj.tree_
                 f.write(struct.pack('i', tree.node_count))
-                
                 for i in range(tree.node_count):
                     f.write(struct.pack('i', int(tree.feature[i])))
                     f.write(struct.pack('f', float(tree.threshold[i])))
                     f.write(struct.pack('i', int(tree.children_left[i])))
                     f.write(struct.pack('i', int(tree.children_right[i])))
-                    f.write(struct.pack('f', float(tree.value[i][0][0])))
-                    f.write(struct.pack('f', float(tree.value[i][0][1])))
-        
-        print(f'\n✓ C++ Ready: {path}')
+                    f.write(struct.pack('f', float(tree.value[i][0][0])))  # non-cone
+                    f.write(struct.pack('f', float(tree.value[i][0][1])))  # cone
+            
+        print(f'✓ C++ Ready ({n_features} feats): {path}')
 
     def load(self, path='cone_detector_rf.pkl'):
         """Load model."""
@@ -408,31 +480,34 @@ class LogSaver:
     def __init__(self, log_dir='logs'):
         self.log_dir = Path(log_dir).expanduser()
         self.log_dir.mkdir(parents=True, exist_ok=True)
-        self.log_file = self.log_dir / 'n_estimator_log.txt'
+        self.log_file = self.log_dir / 'training_log.txt'
     
     def save(self, X_train, X_test, y_train, y_test, train_acc, test_acc, precision, recall, f1, 
-             features, importances, best_params=None):
+         features, importances, best_params=None, cv_results=None):
         results = {
             'dataset_size': len(X_train) + len(X_test),
             'train_size': len(X_train),
             'test_size': len(X_test),
             'cones_total': int(np.sum(y_train) + np.sum(y_test)),
-            'non_cones_total': int(len(y_train) + len(y_test) - np.sum(y_train) - np.sum(y_test)),
+            'non_cones_total': int(len(y_train) + len(X_test) - np.sum(y_train) - np.sum(y_test)),
             'train_accuracy': float(train_acc),
             'test_accuracy': float(test_acc),
             'precision': float(precision),
             'recall': float(recall),
             'f1_score': float(f1),
             'best_params': best_params,
+            'cv_f1_mean': float(cv_results['test_f1'].mean()) if cv_results is not None else None,
+            'cv_f1_std': float(cv_results['test_f1'].std()) if cv_results is not None else None,
             'feature_importances': dict(zip(features, importances.tolist()))
         }
         
         with open(self.log_file, 'a') as f:
             json.dump(results, f)
-            f.write('\n\n')  # Separate entries
+            f.write('\n\n')
         
         print(f'Training log saved: {self.log_file}')
         return self.log_file
+
 # ============================================================================
 # MAIN
 # ============================================================================
