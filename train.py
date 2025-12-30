@@ -54,6 +54,7 @@ def extract_features(cluster_points):
     
     center = xyz.mean(axis=0)
     distances = np.linalg.norm(xyz - center, axis=1) # Average distance from the centroid
+    distancefromlidar = np.linalg.norm(center) # Distance of cluster centroid from lidar origin (0,0,0)
     compactness = np.std(distances) / (np.mean(distances) + 1e-6) # Std deviation of distances
     
     # Average intensity of the cluster. Average of the min and max for each frame, oppossed to cap from 1 to 255 -> will work with different LiDARs
@@ -64,11 +65,12 @@ def extract_features(cluster_points):
     eigenvalues = np.linalg.eigvalsh(cov) 
     linearity = (eigenvalues[2] - eigenvalues[1]) / (eigenvalues[2] + 1e-6) # Cones are not a line
     planarity = (eigenvalues[1] - eigenvalues[0]) / (eigenvalues[2] + 1e-6) # Cones re not a 2D plane
+
     
     return np.array([
         height, width, depth, aspect_ratio, num_points,
         density, compactness, intensity_mean, intensity_std,
-        linearity, planarity, volume
+        linearity, planarity, volume, distancefromlidar
     ], dtype=np.float32)
 
 # ============================================================================
@@ -202,7 +204,7 @@ class RandomForestConeDetector:
         self.best_params = None
         self.feature_names = ['height', 'width', 'depth', 'aspect_ratio', 'num_points',
                         'density', 'compactness', 'intensity_mean', 'intensity_std',
-                        'linearity', 'planarity', 'volume']
+                        'linearity', 'planarity', 'volume', 'distancefromlidar']
     
     def gridsearch(self, X_train, y_train):
         
