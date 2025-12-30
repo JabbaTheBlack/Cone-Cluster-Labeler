@@ -56,6 +56,67 @@ def extract_features(cluster_points):
         linearity, planarity, volume
     ], dtype=np.float32)
 
+def extract_features_8(cluster_points):  
+    xyz = cluster_points[:, :3]
+    intensity = cluster_points[:, 3]
+    
+    height = float(xyz[:, 2].max() - xyz[:, 2].min())
+    width = float(xyz[:, 0].max() - xyz[:, 0].min())
+    depth = float(xyz[:, 1].max() - xyz[:, 1].min())
+    aspect_ratio = height / (width + 1e-6)
+    
+    num_points = len(xyz)
+    volume = (height + 1e-6) * (width + 1e-6) * (depth + 1e-6)
+    density = num_points / volume
+    
+    center = xyz.mean(axis=0)
+    distance_from_lidar = np.linalg.norm(center)  
+    
+    intensity_std = float(intensity.std())
+    
+    return np.array([
+        height,           
+        width,            
+        depth,            
+        aspect_ratio,     
+        density,          
+        intensity_std,    
+        volume,           
+        distance_from_lidar  
+    ], dtype=np.float32)
+
+def extract_features_13(cluster_points):  
+    xyz = cluster_points[:, :3]
+    intensity = cluster_points[:, 3]
+    
+    height = float(xyz[:, 2].max() - xyz[:, 2].min())
+    width = float(xyz[:, 0].max() - xyz[:, 0].min())
+    depth = float(xyz[:, 1].max() - xyz[:, 1].min())
+    aspect_ratio = height / (width + 1e-6)
+    
+    num_points = len(xyz)
+    volume = (height + 1e-6) * (width + 1e-6) * (depth + 1e-6)
+    density = num_points / volume
+    
+    center = xyz.mean(axis=0)
+    distance_from_lidar = np.linalg.norm(center)
+    distances = np.linalg.norm(xyz - center, axis=1)
+    compactness = np.std(distances) / (np.mean(distances) + 1e-6)
+    
+    intensity_mean = float(intensity.mean())
+    intensity_std = float(intensity.std())
+    
+    cov = np.cov(xyz.T)
+    eigenvalues = np.linalg.eigvalsh(cov)
+    linearity = (eigenvalues[2] - eigenvalues[1]) / (eigenvalues[2] + 1e-6)
+    planarity = (eigenvalues[1] - eigenvalues[0]) / (eigenvalues[2] + 1e-6)
+    
+    return np.array([
+        height, width, depth, aspect_ratio, num_points,
+        density, compactness, intensity_mean, intensity_std,
+        linearity, planarity, volume, distance_from_lidar  
+    ], dtype=np.float32)
+
 class MultiTrackDatasetBuilder:
     def __init__(self, base_dataset_path):
         self.base_path = Path(base_dataset_path).expanduser()
@@ -116,8 +177,8 @@ class MultiTrackDatasetBuilder:
                 if cluster is None or len(cluster) < 3:
                     pbar.update(1)
                     continue
-              
-                features = extract_features(cluster)
+
+                features = extract_features_13(cluster)
                 X_track.append(features)
                 y_track.append(1 if label['is_cone'] else 0)
                 pbar.update(1)

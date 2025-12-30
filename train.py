@@ -52,6 +52,9 @@ def extract_features(cluster_points):
     volume = (height + 1e-6) * (width + 1e-6) * (depth + 1e-6) 
     density = num_points / volume # Point per volume cones are not as dense
     
+    center = xyz.mean(axis=0)
+    distancefromlidar = np.linalg.norm(center) # Distance of cluster centroid from lidar origin (0,0,0)
+    
     # Average intensity of the cluster. Average of the min and max for each frame, oppossed to cap from 1 to 255 -> will work with different LiDARs 
     intensity_std = float(intensity.std())
     
@@ -60,7 +63,7 @@ def extract_features(cluster_points):
     
     return np.array([
         height, width, depth, aspect_ratio,
-        density, intensity_std, volume
+        density, intensity_std, volume, distancefromlidar
     ], dtype=np.float32)
 
 # ============================================================================
@@ -193,7 +196,7 @@ class RandomForestConeDetector:
         self.model = None
         self.best_params = None
         self.feature_names = ['height', 'width', 'depth', 'aspect_ratio',
-                        'density', 'intensity_std', 'volume']
+                        'density', 'intensity_std', 'volume', 'distance_from_lidar']
     
     def cross_validate(self, X_scaled, y, cv_folds=5):
         """5-fold cross-validation on full dataset."""
