@@ -19,8 +19,8 @@ class ClusterLabelerNode(Node):
         self.publisher = self.create_publisher(PointCloud2, '/labeling/current_cluster', 10)
         self.timestamp_pub = self.create_publisher(std_msgs.msg.String, '/labeling/current_timestamp', 10)
 
-        script_dir = Path(__file__).parent
-        self.clusters_dir = script_dir / 'Dataset' / 'cone_clusters'
+        script_dir = Path(__file__).parent.parent
+        self.clusters_dir = script_dir / 'Dataset' / 'Raw' / 'Skidpad' / 'fireup_11_28_29'
         self.output_json = self.clusters_dir / 'labeled_clusters.json'
 
         self.labels = {}

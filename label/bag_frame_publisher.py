@@ -26,7 +26,9 @@ class BagFramePublisher(Node):
         self.publisher = self.create_publisher(PointCloud2, '/labeling/synced_frame', 10)
         
         # Path to mcap bag
-        self.bag_path = Path('/home/praksz/FRT2026/Cone-Labeler/Cone-Cluster-Labeler/Dataset/skidpad_transformed.mcap')
+        script_dir = Path(__file__).parent.parent
+        self.bag_path  = script_dir / 'Dataset' / 'Raw' / 'Skidpad' / 'fireup_11_28_29_MANUAL_0.mcap'
+        
         
         # Cache for bag messages indexed by timestamp
         self.frames_by_timestamp = {}  # timestamp -> PointCloud2 message
@@ -39,28 +41,31 @@ class BagFramePublisher(Node):
         self.get_logger().info('Bag Frame Publisher ready')
     
     def load_bag_cache(self):
-        """Load all pointcloud messages from bag indexed by timestamp."""
+        """Load all pointcloud messages from bag indexed by frame number."""
         if self.cache_loaded:
             return
         
         self.get_logger().info(f'Loading bag: {self.bag_path}')
         
         try:
+            topics_found = set()
+            frame_index = 0
             with open(self.bag_path, 'rb') as f:
                 reader = make_reader(f, decoder_factories=[DecoderFactory()])
                 
                 for schema, channel, message, decoded in reader.iter_decoded_messages():
-                    # Collect PointCloud2 messages indexed by header timestamp
+                    # Collect all PointCloud2 messages regardless of topic
                     if schema.name == 'sensor_msgs/msg/PointCloud2':
-                        # Get header timestamp in the same format as cluster filenames
-                        # Format: sec * 1000000 + nsec // 1000 (microseconds)
-                        header_ts = decoded.header.stamp.sec * 1000000 + decoded.header.stamp.nanosec // 1000
+                        topics_found.add(channel.topic)
                         
                         # Deserialize raw message data to proper ROS2 type for publishing
                         ros_msg = deserialize_message(message.data, PointCloud2)
-                        self.frames_by_timestamp[header_ts] = ros_msg
+                        # Index by frame number (sequential order in bag)
+                        self.frames_by_timestamp[frame_index] = ros_msg
+                        frame_index += 1
                 
-                self.get_logger().info(f'Loaded {len(self.frames_by_timestamp)} frames from bag (indexed by timestamp)')
+                self.get_logger().info(f'Found PointCloud2 topics: {topics_found}')
+                self.get_logger().info(f'Loaded {len(self.frames_by_timestamp)} frames from bag (indexed by frame number)')
                 self.cache_loaded = True
         
         except Exception as e:
@@ -69,12 +74,21 @@ class BagFramePublisher(Node):
     def timer_callback(self):
         """Continuously publish the current frame."""
         if self.current_frame is not None:
+            # Set frame_id to os_sensor for visualization compatibility
+            self.current_frame.header.frame_id = 'os_sensor'
+            self.current_frame.header.stamp = self.get_clock().now().to_msg()
             self.publisher.publish(self.current_frame)
     
     def find_closest_frame(self, target_ts):
         """Find the frame with the closest timestamp."""
         if not self.frames_by_timestamp:
+            self.get_logger().warn('No frames loaded in cache!')
             return None
+        
+        # Log available timestamp range
+        min_ts = min(self.frames_by_timestamp.keys())
+        max_ts = max(self.frames_by_timestamp.keys())
+        self.get_logger().info(f'Target: {target_ts}, Bag range: [{min_ts}, {max_ts}], diff to min: {abs(target_ts - min_ts)}µs')
         
         # First try exact match
         if target_ts in self.frames_by_timestamp:
@@ -110,6 +124,9 @@ class BagFramePublisher(Node):
             result = self.find_closest_frame(target_ts)
             if result:
                 frame_msg, matched_ts, diff = result
+                # Set frame_id to os_sensor for visualization compatibility
+                frame_msg.header.frame_id = 'os_sensor'
+                frame_msg.header.stamp = self.get_clock().now().to_msg()
                 self.current_frame = frame_msg  # Store for continuous publishing
                 self.publisher.publish(frame_msg)
                 
