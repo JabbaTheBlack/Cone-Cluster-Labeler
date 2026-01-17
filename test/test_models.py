@@ -56,13 +56,47 @@ def extract_features(cluster_points):
         linearity, planarity, volume
     ], dtype=np.float32)
 
-def extract_features_8(cluster_points):  
+def extract_features_7(cluster_points):  
     xyz = cluster_points[:, :3]
-    intensity = cluster_points[:, 3]
+
+    sigma_x = float(xyz[:, 0].std())
+    sigma_y = float(xyz[:, 1].std())
     
     height = float(xyz[:, 2].max() - xyz[:, 2].min())
-    width = float(xyz[:, 0].max() - xyz[:, 0].min())
-    depth = float(xyz[:, 1].max() - xyz[:, 1].min())
+    width = max(sigma_x, sigma_y) 
+    depth = min(sigma_x, sigma_y) 
+    aspect_ratio = height / (width + 1e-6)
+    
+    num_points = len(xyz)
+    volume = (height + 1e-6) * (width + 1e-6) * (depth + 1e-6)
+    density = num_points / volume
+    
+    center = xyz.mean(axis=0)
+    distance_from_lidar = np.linalg.norm(center)  
+    
+    return np.array([
+        height,           
+        width,            
+        depth,            
+        aspect_ratio,     
+        density,          
+        volume,           
+        distance_from_lidar  
+    ], dtype=np.float32)
+
+def extract_features_8(cluster_points):  
+    xyz = cluster_points[:, :3]
+    intensity_raw = cluster_points[:, 3]
+
+    distance_sq = xyz[:, 0]**2 + xyz[:, 1]**2 + xyz[:, 2]**2
+    intensity = intensity_raw * distance_sq
+    
+    sigma_x = float(xyz[:, 0].std())
+    sigma_y = float(xyz[:, 1].std())
+    
+    height = float(xyz[:, 2].max() - xyz[:, 2].min())
+    width = max(sigma_x, sigma_y) 
+    depth = min(sigma_x, sigma_y) 
     aspect_ratio = height / (width + 1e-6)
     
     num_points = len(xyz)
@@ -84,6 +118,44 @@ def extract_features_8(cluster_points):
         volume,           
         distance_from_lidar  
     ], dtype=np.float32)
+
+def extract_features_9(cluster_points):  
+    xyz = cluster_points[:, :3]
+    intensity_raw = cluster_points[:, 3]
+    
+    distance_sq = xyz[:, 0]**2 + xyz[:, 1]**2 + xyz[:, 2]**2
+    intensity = intensity_raw * distance_sq
+    
+    sigma_x = float(xyz[:, 0].std())
+    sigma_y = float(xyz[:, 1].std())
+
+    height = float(xyz[:, 2].max() - xyz[:, 2].min())
+    width = max(sigma_x, sigma_y) 
+    depth = min(sigma_x, sigma_y) 
+    aspect_ratio = height / (width + 1e-6)
+    
+    num_points = len(xyz)
+    volume = (height + 1e-6) * (width + 1e-6) * (depth + 1e-6)
+    density = num_points / volume
+    
+    center = xyz.mean(axis=0)
+    distance_from_lidar = np.linalg.norm(center)  
+    
+    intensity_std = float(intensity.std())
+    intensity_mean = float(intensity.mean()) 
+    
+    return np.array([
+        height,           
+        width,            
+        depth,            
+        aspect_ratio,     
+        density,          
+        intensity_std,    
+        intensity_mean,
+        volume,           
+        distance_from_lidar  
+    ], dtype=np.float32)
+
 
 def extract_features_13(cluster_points):  
     xyz = cluster_points[:, :3]
@@ -178,7 +250,7 @@ class MultiTrackDatasetBuilder:
                     pbar.update(1)
                     continue
 
-                features = extract_features_13(cluster)
+                features = extract_features_8(cluster)
                 X_track.append(features)
                 y_track.append(1 if label['is_cone'] else 0)
                 pbar.update(1)
