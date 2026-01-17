@@ -40,11 +40,17 @@ def load_pcd_binary(filepath):
 def extract_features(cluster_points):
 
     xyz = cluster_points[:, :3]
-    intensity = cluster_points[:, 3]
+    intensity_raw = cluster_points[:, 3]
     
+    distance_sq = xyz[:, 0]**2 + xyz[:, 1]**2 + xyz[:, 2]**2
+    intensity = intensity_raw * distance_sq
+    
+    sigma_x = float(xyz[:, 0].std())
+    sigma_y = float(xyz[:, 1].std())
+
     height = float(xyz[:, 2].max() - xyz[:, 2].min()) # Height of the cluster
-    width = float(xyz[:, 0].max() - xyz[:, 0].min()) # Width of the cluster
-    depth = float(xyz[:, 1].max() - xyz[:, 1].min()) # Depth of the cluster
+    width = max(sigma_x, sigma_y) # Width of the cluster
+    depth = min(sigma_x, sigma_y) # Depth of the cluster
     aspect_ratio = height / (width + 1e-6) # Height to width ratio
     
     num_points = len(xyz) # Number of points in the cluster
@@ -57,13 +63,13 @@ def extract_features(cluster_points):
     
     # Average intensity of the cluster. Average of the min and max for each frame, oppossed to cap from 1 to 255 -> will work with different LiDARs 
     intensity_std = float(intensity.std())
-    
+    intensity_mean = float(intensity.mean())    
     cov = np.cov(xyz.T) # Covariance matrix of the points
     eigenvalues = np.linalg.eigvalsh(cov) 
     
     return np.array([
         height, width, depth, aspect_ratio,
-        density, intensity_std, volume, distancefromlidar
+        density, volume, distancefromlidar
     ], dtype=np.float32)
 
 # ============================================================================
@@ -196,7 +202,7 @@ class RandomForestConeDetector:
         self.model = None
         self.best_params = None
         self.feature_names = ['height', 'width', 'depth', 'aspect_ratio',
-                        'density', 'intensity_std', 'volume', 'distance_from_lidar']
+                        'density', 'volume', 'distance_from_lidar']
     
     def cross_validate(self, X_scaled, y, cv_folds=5):
         """5-fold cross-validation on full dataset."""
