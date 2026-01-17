@@ -138,7 +138,7 @@ class ClusterLabelerNode(Node):
         cluster_files = sorted(self.clusters_dir.glob('scan_*_frame_*_cluster_*.pcd'))
         
         print(f'Found {len(cluster_files)} clusters')
-        print('Controls: b=blue, Y=yellow, u=unknown, n=not cone, s=skip, q=quit\n')
+        print('Controls: b=blue, Y=yellow, o=orange, u=unknown, n=not cone, s=skip, q=quit\n')
         
         # RESUME FROM LAST LABELED
         idx = self.find_resume_idx(cluster_files)
@@ -169,7 +169,7 @@ class ClusterLabelerNode(Node):
             
             self.print_stats(cloud, timestamp_info)
             print('Publishing to Foxglove...')
-            print('Label: (b/Y/u/n/s/q) >> ', end='', flush=True)
+            print('Label: (b/Y/o/u/n/s/q) >> ', end='', flush=True)
             
             labeled = False
             while not labeled:
@@ -199,6 +199,11 @@ class ClusterLabelerNode(Node):
                     elif key == 'Y':
                         self.labels[filename] = {'is_cone': True, 'color': 'yellow'}
                         print('✓ CONE (yellow)')
+                        labeled = True
+                        idx += 1
+                    elif key == 'o':
+                        self.labels[filename] = {'is_cone': True, 'color': 'orange'}
+                        print('✓ CONE (orange)')
                         labeled = True
                         idx += 1
                     elif key == 'u':
