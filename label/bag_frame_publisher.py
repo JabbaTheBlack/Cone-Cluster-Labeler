@@ -27,7 +27,7 @@ class BagFramePublisher(Node):
         
         # Path to mcap bag
         script_dir = Path(__file__).parent.parent
-        self.bag_path  = script_dir / 'Dataset' / 'Raw' / 'Skidpad' / 'fireup_11_28_29_MANUAL_0.mcap'
+        self.bag_path  = script_dir / 'Dataset' / 'raw' / 'Skidpad' / 'fireup_11_28_29_MANUAL_0.mcap'
         
         
         # Cache for bag messages indexed by timestamp
@@ -41,7 +41,7 @@ class BagFramePublisher(Node):
         self.get_logger().info('Bag Frame Publisher ready')
     
     def load_bag_cache(self):
-        """Load all pointcloud messages from bag indexed by frame number."""
+        """Load all pointcloud messages from bag indexed by timestamp."""
         if self.cache_loaded:
             return
         
@@ -49,7 +49,6 @@ class BagFramePublisher(Node):
         
         try:
             topics_found = set()
-            frame_index = 0
             with open(self.bag_path, 'rb') as f:
                 reader = make_reader(f, decoder_factories=[DecoderFactory()])
                 
@@ -58,14 +57,17 @@ class BagFramePublisher(Node):
                     if schema.name == 'sensor_msgs/msg/PointCloud2':
                         topics_found.add(channel.topic)
                         
+                        # Use MCAP log_time (absolute unix epoch timestamp)
+                        # Convert nanoseconds to microseconds
+                        log_time_ts = message.log_time // 1000
+                        
                         # Deserialize raw message data to proper ROS2 type for publishing
                         ros_msg = deserialize_message(message.data, PointCloud2)
-                        # Index by frame number (sequential order in bag)
-                        self.frames_by_timestamp[frame_index] = ros_msg
-                        frame_index += 1
+                        # Index by log_time timestamp
+                        self.frames_by_timestamp[log_time_ts] = ros_msg
                 
                 self.get_logger().info(f'Found PointCloud2 topics: {topics_found}')
-                self.get_logger().info(f'Loaded {len(self.frames_by_timestamp)} frames from bag (indexed by frame number)')
+                self.get_logger().info(f'Loaded {len(self.frames_by_timestamp)} frames from bag (indexed by timestamp)')
                 self.cache_loaded = True
         
         except Exception as e:

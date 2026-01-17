@@ -24,7 +24,7 @@ import numpy as np
 # Set your default bag file path here
 # ============================================================================
 script_dir = Path(__file__).parent
-DEFAULT_BAG_PATH = script_dir / 'Dataset' / 'Raw' / 'Skidpad' / 'fireup_11_28_29_MANUAL_0.mcap'
+DEFAULT_BAG_PATH = script_dir / 'Dataset' / 'raw' / 'Skidpad' / 'fireup_11_28_29_MANUAL_0.mcap'
 
 class ClusterImageFinder:
     def __init__(self, bag_path):
