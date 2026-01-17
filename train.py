@@ -40,10 +40,6 @@ def load_pcd_binary(filepath):
 def extract_features(cluster_points):
 
     xyz = cluster_points[:, :3]
-    intensity_raw = cluster_points[:, 3]
-    
-    distance_sq = xyz[:, 0]**2 + xyz[:, 1]**2 + xyz[:, 2]**2
-    intensity = intensity_raw * distance_sq
     
     sigma_x = float(xyz[:, 0].std())
     sigma_y = float(xyz[:, 1].std())
@@ -60,13 +56,7 @@ def extract_features(cluster_points):
     
     center = xyz.mean(axis=0)
     distancefromlidar = np.linalg.norm(center) # Distance of cluster centroid from lidar origin (0,0,0)
-    
-    # Average intensity of the cluster. Average of the min and max for each frame, oppossed to cap from 1 to 255 -> will work with different LiDARs 
-    intensity_std = float(intensity.std())
-    intensity_mean = float(intensity.mean())    
-    cov = np.cov(xyz.T) # Covariance matrix of the points
-    eigenvalues = np.linalg.eigvalsh(cov) 
-    
+
     return np.array([
         height, width, depth, aspect_ratio,
         density, volume, distancefromlidar
