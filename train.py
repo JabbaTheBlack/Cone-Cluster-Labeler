@@ -84,7 +84,7 @@ class MultiTrackDatasetBuilder:
         Args:
             base_dataset_path: Path to Dataset folder (contains Acceleration/, Skidpad/, Autocross/)
         """
-        self.base_path = Path(base_dataset_path).expanduser()
+        self.base_path = Path(base_dataset_path).expanduser() / "Processed" / "Detection"
         self.tracks = {}
         self.X = []
         self.y = []
@@ -377,9 +377,9 @@ class RandomForestConeDetector:
         
         script_dir = Path(__file__).parent
         (script_dir / 'figures').mkdir(parents=True, exist_ok=True)
-        plt.savefig(script_dir / 'figures' / 'feature_correlation.png', dpi=300, bbox_inches='tight')
+        plt.savefig(script_dir / 'figures' / 'detection' / 'feature_correlation.png', dpi=300, bbox_inches='tight')
         plt.close()
-        print('✓ Saved: figures/feature_correlation.png')
+        print('✓ Saved: figures/detection/feature_correlation.png')
 
 
     def visualize_confusion_matrix(self, y_true, y_pred):
@@ -415,8 +415,8 @@ class RandomForestConeDetector:
 
         script_dir = Path(__file__).parent
         (script_dir / 'figures').mkdir(parents=True, exist_ok=True)
-        plt.savefig(script_dir / 'figures' / 'feature_importances.png', dpi=300, bbox_inches='tight')
-        print('✓ Saved: figures/feature_importances.png')
+        plt.savefig(script_dir / 'figures' / 'detection' / 'feature_importances.png', dpi=300, bbox_inches='tight')
+        print('✓ Saved: figures/detection/feature_importances.png')
 
     def save(self, path='cone_detector_rf.pkl'):
         """Save model."""
@@ -489,7 +489,7 @@ class LogSaver:
     def __init__(self, log_dir='logs'):
         self.log_dir = Path(log_dir).expanduser()
         self.log_dir.mkdir(parents=True, exist_ok=True)
-        self.log_file = self.log_dir / 'training_log.txt'
+        self.log_file = self.log_dir / 'detection' / 'training_log.txt'
     
     def save(self, X_train, X_test, y_train, y_test, train_acc, test_acc, precision, recall, f1, 
          features, importances, best_params=None, cv_results=None):
