@@ -342,7 +342,7 @@ class RandomForestConeDetector:
         
         print(f'\n✓ Evaluation Results:')
         print(f'  Train Acc: {train_accuracy:.2%}')
-        print(f'  Val Acc:   {test_acc:.2%}')
+        print(f'  Test Acc:   {test_acc:.2%}')
         print(f'  Precision: {test_precision:.2%}')
         print(f'  Recall:    {test_recall:.2%}')
         print(f'  F1 Score:  {test_f1_score:.2%}')
