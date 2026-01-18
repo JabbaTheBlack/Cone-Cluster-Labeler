@@ -21,7 +21,9 @@ def should_keep_frame(frame_num):
     Determine if a frame should be kept based on filtering rules:
     - Keep frames 250, 260, 270, ... (every 10th starting from 250)
     """
-    # Keep every 10th frame 
+    # Keep every 10th frame
+    if frame_num <= 10:
+        return True
     if frame_num  % 10 == 0:
         return True
     
@@ -29,7 +31,7 @@ def should_keep_frame(frame_num):
 
 def main():
     # Path to cone_clusters directory
-    cone_clusters_dir = Path(__file__).parent / "Dataset" / "Skidpad_2" / "cone_clusters"
+    cone_clusters_dir = Path(__file__).parent / "Dataset" / "raw" / "Skidpad" / "fireup_11_28_29"
     
     if not cone_clusters_dir.exists():
         print(f"Error: Directory {cone_clusters_dir} does not exist!")
