@@ -2002,5 +2002,601 @@
   "scan_642855743165_frame_190_cluster_0004.pcd": {
     "is_cone": true,
     "color": "yellow"
+  },
+  "scan_647605482840_frame_285_cluster_0000.pcd": {
+    "is_cone": true,
+    "color": "yellow"
+  },
+  "scan_647605482840_frame_285_cluster_0001.pcd": {
+    "is_cone": true,
+    "color": "yellow"
+  },
+  "scan_647605482840_frame_285_cluster_0002.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_647605482840_frame_285_cluster_0003.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_647605482840_frame_285_cluster_0004.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_647605482840_frame_285_cluster_0005.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_647605482840_frame_285_cluster_0006.pcd": {
+    "is_cone": true,
+    "color": "orange"
+  },
+  "scan_647605482840_frame_285_cluster_0007.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_647605482840_frame_285_cluster_0008.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_647605482840_frame_285_cluster_0009.pcd": {
+    "is_cone": true,
+    "color": "yellow"
+  },
+  "scan_647605482840_frame_285_cluster_0010.pcd": {
+    "is_cone": true,
+    "color": "orange"
+  },
+  "scan_647605482840_frame_285_cluster_0011.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_647605482840_frame_285_cluster_0012.pcd": {
+    "is_cone": true,
+    "color": "yellow"
+  },
+  "scan_647605482840_frame_285_cluster_0013.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_647605482840_frame_285_cluster_0014.pcd": {
+    "is_cone": true,
+    "color": "yellow"
+  },
+  "scan_647605482840_frame_285_cluster_0015.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_647605482840_frame_285_cluster_0016.pcd": {
+    "is_cone": true,
+    "color": "orange"
+  },
+  "scan_647605482840_frame_285_cluster_0017.pcd": {
+    "is_cone": true,
+    "color": "yellow"
+  },
+  "scan_647605482840_frame_285_cluster_0018.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_647605482840_frame_285_cluster_0019.pcd": {
+    "is_cone": true,
+    "color": "yellow"
+  },
+  "scan_647855600095_frame_290_cluster_0000.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_647855600095_frame_290_cluster_0001.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_647855600095_frame_290_cluster_0002.pcd": {
+    "is_cone": true,
+    "color": "orange"
+  },
+  "scan_647855600095_frame_290_cluster_0003.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_647855600095_frame_290_cluster_0004.pcd": {
+    "is_cone": true,
+    "color": "yellow"
+  },
+  "scan_647855600095_frame_290_cluster_0005.pcd": {
+    "is_cone": true,
+    "color": "yellow"
+  },
+  "scan_647855600095_frame_290_cluster_0006.pcd": {
+    "is_cone": true,
+    "color": "orange"
+  },
+  "scan_647855600095_frame_290_cluster_0007.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_647855600095_frame_290_cluster_0008.pcd": {
+    "is_cone": true,
+    "color": "yellow"
+  },
+  "scan_647855600095_frame_290_cluster_0009.pcd": {
+    "is_cone": true,
+    "color": "orange"
+  },
+  "scan_647855600095_frame_290_cluster_0010.pcd": {
+    "is_cone": true,
+    "color": "yellow"
+  },
+  "scan_647855600095_frame_290_cluster_0011.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_648105566890_frame_295_cluster_0000.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_648105566890_frame_295_cluster_0001.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_648105566890_frame_295_cluster_0002.pcd": {
+    "is_cone": true,
+    "color": "yellow"
+  },
+  "scan_648105566890_frame_295_cluster_0003.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_648105566890_frame_295_cluster_0004.pcd": {
+    "is_cone": true,
+    "color": "orange"
+  },
+  "scan_648105566890_frame_295_cluster_0005.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_648105566890_frame_295_cluster_0006.pcd": {
+    "is_cone": true,
+    "color": "yellow"
+  },
+  "scan_648105566890_frame_295_cluster_0007.pcd": {
+    "is_cone": true,
+    "color": "orange"
+  },
+  "scan_648105566890_frame_295_cluster_0008.pcd": {
+    "is_cone": true,
+    "color": "yellow"
+  },
+  "scan_648105566890_frame_295_cluster_0009.pcd": {
+    "is_cone": true,
+    "color": "orange"
+  },
+  "scan_648105566890_frame_295_cluster_0010.pcd": {
+    "is_cone": true,
+    "color": "orange"
+  },
+  "scan_648105566890_frame_295_cluster_0011.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_648105566890_frame_295_cluster_0012.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_648355370985_frame_300_cluster_0000.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_648355370985_frame_300_cluster_0001.pcd": {
+    "is_cone": true,
+    "color": "orange"
+  },
+  "scan_648355370985_frame_300_cluster_0002.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_648355370985_frame_300_cluster_0003.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_648355370985_frame_300_cluster_0004.pcd": {
+    "is_cone": true,
+    "color": "yellow"
+  },
+  "scan_648355370985_frame_300_cluster_0005.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_648355370985_frame_300_cluster_0006.pcd": {
+    "is_cone": true,
+    "color": "orange"
+  },
+  "scan_648355370985_frame_300_cluster_0007.pcd": {
+    "is_cone": true,
+    "color": "yellow"
+  },
+  "scan_648355370985_frame_300_cluster_0008.pcd": {
+    "is_cone": true,
+    "color": "orange"
+  },
+  "scan_648355370985_frame_300_cluster_0009.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_648355370985_frame_300_cluster_0010.pcd": {
+    "is_cone": true,
+    "color": "yellow"
+  },
+  "scan_648355370985_frame_300_cluster_0011.pcd": {
+    "is_cone": true,
+    "color": "orange"
+  },
+  "scan_648355370985_frame_300_cluster_0012.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_648605212935_frame_305_cluster_0000.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_648605212935_frame_305_cluster_0001.pcd": {
+    "is_cone": true,
+    "color": "orange"
+  },
+  "scan_648605212935_frame_305_cluster_0002.pcd": {
+    "is_cone": true,
+    "color": "orange"
+  },
+  "scan_648605212935_frame_305_cluster_0003.pcd": {
+    "is_cone": true,
+    "color": "yellow"
+  },
+  "scan_648605212935_frame_305_cluster_0004.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_648605212935_frame_305_cluster_0005.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_648605212935_frame_305_cluster_0006.pcd": {
+    "is_cone": true,
+    "color": "orange"
+  },
+  "scan_648605212935_frame_305_cluster_0007.pcd": {
+    "is_cone": true,
+    "color": "yellow"
+  },
+  "scan_648605212935_frame_305_cluster_0008.pcd": {
+    "is_cone": true,
+    "color": "orange"
+  },
+  "scan_648605212935_frame_305_cluster_0009.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_648605212935_frame_305_cluster_0010.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_648605212935_frame_305_cluster_0011.pcd": {
+    "is_cone": true,
+    "color": "yellow"
+  },
+  "scan_648605212935_frame_305_cluster_0012.pcd": {
+    "is_cone": true,
+    "color": "yellow"
+  },
+  "scan_648605212935_frame_305_cluster_0013.pcd": {
+    "is_cone": true,
+    "color": "yellow"
+  },
+  "scan_648605212935_frame_305_cluster_0014.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_648605212935_frame_305_cluster_0015.pcd": {
+    "is_cone": true,
+    "color": "orange"
+  },
+  "scan_648855337830_frame_310_cluster_0000.pcd": {
+    "is_cone": true,
+    "color": "orange"
+  },
+  "scan_648855337830_frame_310_cluster_0001.pcd": {
+    "is_cone": true,
+    "color": "orange"
+  },
+  "scan_648855337830_frame_310_cluster_0002.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_648855337830_frame_310_cluster_0003.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_648855337830_frame_310_cluster_0004.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_648855337830_frame_310_cluster_0005.pcd": {
+    "is_cone": true,
+    "color": "yellow"
+  },
+  "scan_648855337830_frame_310_cluster_0006.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_648855337830_frame_310_cluster_0007.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_648855337830_frame_310_cluster_0008.pcd": {
+    "is_cone": true,
+    "color": "orange"
+  },
+  "scan_648855337830_frame_310_cluster_0009.pcd": {
+    "is_cone": true,
+    "color": "yellow"
+  },
+  "scan_648855337830_frame_310_cluster_0010.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_648855337830_frame_310_cluster_0011.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_648855337830_frame_310_cluster_0012.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_648855337830_frame_310_cluster_0013.pcd": {
+    "is_cone": true,
+    "color": "yellow"
+  },
+  "scan_648855337830_frame_310_cluster_0014.pcd": {
+    "is_cone": true,
+    "color": "orange"
+  },
+  "scan_648855337830_frame_310_cluster_0015.pcd": {
+    "is_cone": true,
+    "color": "orange"
+  },
+  "scan_649105707080_frame_315_cluster_0000.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_649105707080_frame_315_cluster_0001.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_649105707080_frame_315_cluster_0002.pcd": {
+    "is_cone": true,
+    "color": "yellow"
+  },
+  "scan_649105707080_frame_315_cluster_0003.pcd": {
+    "is_cone": true,
+    "color": "yellow"
+  },
+  "scan_649105707080_frame_315_cluster_0004.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_649105707080_frame_315_cluster_0005.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_649105707080_frame_315_cluster_0006.pcd": {
+    "is_cone": true,
+    "color": "orange"
+  },
+  "scan_649105707080_frame_315_cluster_0007.pcd": {
+    "is_cone": true,
+    "color": "yellow"
+  },
+  "scan_649105707080_frame_315_cluster_0008.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_649105707080_frame_315_cluster_0009.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_649105707080_frame_315_cluster_0010.pcd": {
+    "is_cone": true,
+    "color": "orange"
+  },
+  "scan_649105707080_frame_315_cluster_0011.pcd": {
+    "is_cone": true,
+    "color": "yellow"
+  },
+  "scan_649105707080_frame_315_cluster_0012.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_649105707080_frame_315_cluster_0013.pcd": {
+    "is_cone": true,
+    "color": "yellow"
+  },
+  "scan_649105707080_frame_315_cluster_0014.pcd": {
+    "is_cone": true,
+    "color": "orange"
+  },
+  "scan_649105707080_frame_315_cluster_0015.pcd": {
+    "is_cone": true,
+    "color": "orange"
+  },
+  "scan_649105707080_frame_315_cluster_0016.pcd": {
+    "is_cone": true,
+    "color": "orange"
+  },
+  "scan_649105707080_frame_315_cluster_0017.pcd": {
+    "is_cone": true,
+    "color": "orange"
+  },
+  "scan_649105707080_frame_315_cluster_0018.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_649355906100_frame_320_cluster_0000.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_649355906100_frame_320_cluster_0001.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_649355906100_frame_320_cluster_0002.pcd": {
+    "is_cone": true,
+    "color": "orange"
+  },
+  "scan_649355906100_frame_320_cluster_0003.pcd": {
+    "is_cone": true,
+    "color": "orange"
+  },
+  "scan_649355906100_frame_320_cluster_0004.pcd": {
+    "is_cone": true,
+    "color": "yellow"
+  },
+  "scan_649355906100_frame_320_cluster_0005.pcd": {
+    "is_cone": true,
+    "color": "yellow"
+  },
+  "scan_649355906100_frame_320_cluster_0006.pcd": {
+    "is_cone": true,
+    "color": "yellow"
+  },
+  "scan_649355906100_frame_320_cluster_0007.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_649355906100_frame_320_cluster_0008.pcd": {
+    "is_cone": true,
+    "color": "yellow"
+  },
+  "scan_649355906100_frame_320_cluster_0009.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_649355906100_frame_320_cluster_0010.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_649355906100_frame_320_cluster_0011.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_649355906100_frame_320_cluster_0012.pcd": {
+    "is_cone": true,
+    "color": "orange"
+  },
+  "scan_649355906100_frame_320_cluster_0013.pcd": {
+    "is_cone": true,
+    "color": "orange"
+  },
+  "scan_649355906100_frame_320_cluster_0014.pcd": {
+    "is_cone": true,
+    "color": "orange"
+  },
+  "scan_649355906100_frame_320_cluster_0015.pcd": {
+    "is_cone": true,
+    "color": "orange"
+  },
+  "scan_649605667680_frame_325_cluster_0000.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_649605667680_frame_325_cluster_0001.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_649605667680_frame_325_cluster_0002.pcd": {
+    "is_cone": true,
+    "color": "yellow"
+  },
+  "scan_649605667680_frame_325_cluster_0003.pcd": {
+    "is_cone": true,
+    "color": "orange"
+  },
+  "scan_649605667680_frame_325_cluster_0004.pcd": {
+    "is_cone": true,
+    "color": "orange"
+  },
+  "scan_649605667680_frame_325_cluster_0005.pcd": {
+    "is_cone": true,
+    "color": "orange"
+  },
+  "scan_649605667680_frame_325_cluster_0006.pcd": {
+    "is_cone": true,
+    "color": "orange"
+  },
+  "scan_649605667680_frame_325_cluster_0007.pcd": {
+    "is_cone": true,
+    "color": "orange"
+  },
+  "scan_649605667680_frame_325_cluster_0008.pcd": {
+    "is_cone": true,
+    "color": "yellow"
+  },
+  "scan_649605667680_frame_325_cluster_0009.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_649605667680_frame_325_cluster_0010.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_649605667680_frame_325_cluster_0011.pcd": {
+    "is_cone": true,
+    "color": "yellow"
+  },
+  "scan_649605667680_frame_325_cluster_0012.pcd": {
+    "is_cone": true,
+    "color": "yellow"
+  },
+  "scan_649605667680_frame_325_cluster_0013.pcd": {
+    "is_cone": true,
+    "color": "orange"
+  },
+  "scan_649605667680_frame_325_cluster_0014.pcd": {
+    "is_cone": true,
+    "color": "orange"
+  },
+  "scan_649605667680_frame_325_cluster_0015.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_649855341605_frame_330_cluster_0000.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_649855341605_frame_330_cluster_0001.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_649855341605_frame_330_cluster_0002.pcd": {
+    "is_cone": true,
+    "color": "orange"
+  },
+  "scan_649855341605_frame_330_cluster_0003.pcd": {
+    "is_cone": true,
+    "color": "orange"
+  },
+  "scan_649855341605_frame_330_cluster_0004.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  },
+  "scan_649855341605_frame_330_cluster_0005.pcd": {
+    "is_cone": true,
+    "color": "yellow"
+  },
+  "scan_649855341605_frame_330_cluster_0006.pcd": {
+    "is_cone": true,
+    "color": "yellow"
+  },
+  "scan_649855341605_frame_330_cluster_0007.pcd": {
+    "is_cone": true,
+    "color": "blue"
   }
 }
