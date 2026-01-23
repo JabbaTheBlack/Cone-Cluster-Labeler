@@ -486,8 +486,8 @@ def main():
     script_dir = Path(__file__).parent
 
     default_dataset = script_dir / 'Dataset'
-    default_output = script_dir / 'models' / 'cone_detector_rf.pkl'
-    default_output_bin = script_dir / 'models' / 'cone_detector.bin'
+    default_output = script_dir / 'models' / 'detection' / 'cone_detector_rf.pkl'
+    default_output_bin = script_dir / 'models' / 'detection'/ 'cone_detector.bin'
 
     parser.add_argument('--dataset', default=str(default_dataset),
                        help='Path to Dataset folder (contains Acceleration/, Skidpad/, Autocross/)')
