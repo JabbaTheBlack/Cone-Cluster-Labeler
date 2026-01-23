@@ -213,38 +213,6 @@ class RandomForestConeDetector:
         return cv_results
 
     def gridsearch(self, X_train, y_train):
-        
-        # param_grid = {
-        #     'n_estimators': list(range(10, 110, 10)),
-        #     'max_depth': [10, 15, 20, 25, 30, None],
-        #     'min_samples_split': [2, 5, 10, 15, 20],
-        #     'min_samples_leaf': [1, 2, 4, 5, 6, 10],
-        #     'max_features': ['sqrt', 'log2']
-        # }
-
-
-        # rf = RandomForestClassifier(random_state=42)
-
-        # # GridSearchCV
-        # grid_search = GridSearchCV(
-        #     estimator=rf, 
-        #     param_grid=param_grid,
-        #     cv=5,   
-        #     scoring='f1',  
-        #     n_jobs=-1,
-        #     verbose=0
-        # )
-
-        # grid_search.fit(X_train, y_train)
-
-        # print(f'\n✓ GridSearch Complete!')
-        # print(f'  Best F1 Score: {grid_search.best_score_:.4f}')
-        # print(f'  Best Params: {grid_search.best_params_}')
-
-        # self.best_params = grid_search.best_params_
-        # self.model = grid_search.best_estimator_
-
-        # return self.model
 
         rf = RandomForestClassifier(random_state=42)
     
