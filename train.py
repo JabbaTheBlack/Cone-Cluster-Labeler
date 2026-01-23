@@ -353,9 +353,9 @@ class RandomForestConeDetector:
 
         script_dir = Path(__file__).parent
         (script_dir / 'figures').mkdir(parents=True, exist_ok=True)
-        plt.savefig(script_dir / 'figures' / 'confusion_matrix.png', dpi=300, bbox_inches='tight')
+        plt.savefig(script_dir / 'figures' / 'detection' / 'confusion_matrix.png', dpi=300, bbox_inches='tight')
         plt.close()
-        print('✓ Saved: figures/confusion_matrix.png')
+        print('✓ Saved: figures/detection/confusion_matrix.png')
         
 
     def visualize_feature_importances(self):
