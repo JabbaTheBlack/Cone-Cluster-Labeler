@@ -1,0 +1,10 @@
+{
+  "scan_117327079_frame_0_cluster_0000.pcd": {
+    "is_cone": true,
+    "color": "yellow"
+  },
+  "scan_117327079_frame_0_cluster_0001.pcd": {
+    "is_cone": true,
+    "color": "blue"
+  }
+}
