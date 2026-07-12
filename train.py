@@ -213,38 +213,6 @@ class RandomForestConeDetector:
         return cv_results
 
     def gridsearch(self, X_train, y_train):
-        
-        # param_grid = {
-        #     'n_estimators': list(range(10, 110, 10)),
-        #     'max_depth': [10, 15, 20, 25, 30, None],
-        #     'min_samples_split': [2, 5, 10, 15, 20],
-        #     'min_samples_leaf': [1, 2, 4, 5, 6, 10],
-        #     'max_features': ['sqrt', 'log2']
-        # }
-
-
-        # rf = RandomForestClassifier(random_state=42)
-
-        # # GridSearchCV
-        # grid_search = GridSearchCV(
-        #     estimator=rf, 
-        #     param_grid=param_grid,
-        #     cv=5,   
-        #     scoring='f1',  
-        #     n_jobs=-1,
-        #     verbose=0
-        # )
-
-        # grid_search.fit(X_train, y_train)
-
-        # print(f'\n✓ GridSearch Complete!')
-        # print(f'  Best F1 Score: {grid_search.best_score_:.4f}')
-        # print(f'  Best Params: {grid_search.best_params_}')
-
-        # self.best_params = grid_search.best_params_
-        # self.model = grid_search.best_estimator_
-
-        # return self.model
 
         rf = RandomForestClassifier(random_state=42)
     
@@ -385,9 +353,9 @@ class RandomForestConeDetector:
 
         script_dir = Path(__file__).parent
         (script_dir / 'figures').mkdir(parents=True, exist_ok=True)
-        plt.savefig(script_dir / 'figures' / 'confusion_matrix.png', dpi=300, bbox_inches='tight')
+        plt.savefig(script_dir / 'figures' / 'detection' / 'confusion_matrix.png', dpi=300, bbox_inches='tight')
         plt.close()
-        print('✓ Saved: figures/confusion_matrix.png')
+        print('✓ Saved: figures/detection/confusion_matrix.png')
         
 
     def visualize_feature_importances(self):
@@ -518,8 +486,8 @@ def main():
     script_dir = Path(__file__).parent
 
     default_dataset = script_dir / 'Dataset'
-    default_output = script_dir / 'models' / 'cone_detector_rf.pkl'
-    default_output_bin = script_dir / 'models' / 'cone_detector.bin'
+    default_output = script_dir / 'models' / 'detection' / 'cone_detector_rf.pkl'
+    default_output_bin = script_dir / 'models' / 'detection'/ 'cone_detector.bin'
 
     parser.add_argument('--dataset', default=str(default_dataset),
                        help='Path to Dataset folder (contains Acceleration/, Skidpad/, Autocross/)')
