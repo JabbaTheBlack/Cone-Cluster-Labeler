@@ -25,9 +25,10 @@ class BagFramePublisher(Node):
         # Publish synced frames from bag
         self.publisher = self.create_publisher(PointCloud2, '/labeling/synced_frame', 10)
         
-        # Path to mcap bag
+        # Path to mcap bag (sits alongside the Trackdrive clusters it corresponds to)
         script_dir = Path(__file__).parent.parent
-        self.bag_path  = script_dir / 'Dataset' / 'raw' / 'Skidpad' / 'fireup_11_28_29_MANUAL_0.mcap'
+        self.bag_path  = (script_dir / 'Dataset' / 'raw' / 'Trackdrive' / 'Zalazone_06_02_13'
+                          / 'Zalazone_06_02_13_TRACKDRIVE_0.mcap')
         
         
         # Cache for bag messages indexed by timestamp
@@ -56,15 +57,17 @@ class BagFramePublisher(Node):
                     # Collect all PointCloud2 messages regardless of topic
                     if schema.name == 'sensor_msgs/msg/PointCloud2':
                         topics_found.add(channel.topic)
-                        
-                        # Use MCAP log_time (absolute unix epoch timestamp)
-                        # Convert nanoseconds to microseconds
-                        log_time_ts = message.log_time // 1000
-                        
+
+                        # Index by the cloud's own header stamp (microseconds), which is
+                        # exactly how the cluster .pcd filenames are timestamped:
+                        # sec * 1e6 + nsec // 1000. This keeps sync consistent with the
+                        # cluster extraction (header stamp, NOT the MCAP log_time).
+                        header_ts = decoded.header.stamp.sec * 1_000_000 + decoded.header.stamp.nanosec // 1000
+
                         # Deserialize raw message data to proper ROS2 type for publishing
                         ros_msg = deserialize_message(message.data, PointCloud2)
-                        # Index by log_time timestamp
-                        self.frames_by_timestamp[log_time_ts] = ros_msg
+                        # Index by header-stamp timestamp
+                        self.frames_by_timestamp[header_ts] = ros_msg
                 
                 self.get_logger().info(f'Found PointCloud2 topics: {topics_found}')
                 self.get_logger().info(f'Loaded {len(self.frames_by_timestamp)} frames from bag (indexed by timestamp)')
