@@ -1,2 +1,5 @@
 cluster_labeler_env/
 *.mcap
+extract_clusters.py
+__pycache__/
+OVERVIEW.md
