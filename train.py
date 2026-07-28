@@ -803,7 +803,6 @@ class LogSaver:
 
 
         results = {
-            'timestamp': time.strftime('%Y-%m-%dT%H:%M:%S'),
             'dataset_size': len(X_train) + len(X_test),
             'train_size': len(X_train),
             'test_size': len(X_test),
@@ -823,7 +822,9 @@ class LogSaver:
 
 
         with open(self.log_file, 'a', encoding='utf-8') as f:
-            f.write(json.dumps(results) + '\n')
+            f.write('\n')
+            f.write(json.dumps(results))
+            f.write('\n')
 
 
 
