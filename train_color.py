@@ -12,6 +12,7 @@ from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix, classification_report
 from tqdm import tqdm
+import time
 
 sns.set(style='whitegrid', context='talk')
 
@@ -43,7 +44,7 @@ def extract_features(points):
     xyz = points[:, :3]
     intensity = points[:, 3]
     z = xyz[:, 2]
-    
+
     height = float(z.max() - z.min())
     width = max(xyz[:, 0].std(), xyz[:, 1].std(), 1e-6)
     aspect_ratio = height / width
@@ -52,21 +53,29 @@ def extract_features(points):
     dist_sq = (distance ** 2) + 1e-6
     avg_i = intensity.mean()
     std_i = intensity.std()
-    
+
     norm_avg_i = np.log1p(avg_i * dist_sq)
     norm_std_i = np.log1p(std_i * dist_sq)
-    
-    contrast = (intensity.max() - intensity.min()) / (avg_i + 1e-6)
+
+    # percentile-based range: robust to single noisy returns
+    i_lo, i_hi = np.percentile(intensity, [5, 95])
+    contrast = (i_hi - i_lo) / (avg_i + 1e-6)
     reflective_point_pct = np.mean(intensity > (avg_i * 1.5))
 
+    # three-band vertical intensity profile (bottom / mid / top)
     z_min, z_max = z.min(), z.max()
-    z_range = z_max - z_min
-    bot_mask = z < (z_min + 0.3 * z_range)
-    mid_mask = (z >= (z_min + 0.3 * z_range)) & (z <= (z_min + 0.7 * z_range))
-    
+    z_range = max(z_max - z_min, 1e-6)
+    bot_mask = z < (z_min + 0.33 * z_range)
+    top_mask = z > (z_min + 0.67 * z_range)
+    mid_mask = ~bot_mask & ~top_mask
+
     bot_i = intensity[bot_mask].mean() if bot_mask.sum() > 0 else avg_i
     mid_i = intensity[mid_mask].mean() if mid_mask.sum() > 0 else avg_i
-    contrast_diff_bot_mid = abs(mid_i - bot_i) / (avg_i + 1e-6)
+    top_i = intensity[top_mask].mean() if top_mask.sum() > 0 else avg_i
+
+    contrast_bot_mid = (mid_i - bot_i) / (avg_i + 1e-6)
+    contrast_mid_top = (top_i - mid_i) / (avg_i + 1e-6)
+    contrast_bot_top = (top_i - bot_i) / (avg_i + 1e-6)
 
     z_centered = z - z.mean()
     i_centered = intensity - avg_i
@@ -80,14 +89,26 @@ def extract_features(points):
         aspect_ratio,
         contrast,
         reflective_point_pct,
-        contrast_diff_bot_mid,
+        contrast_bot_mid,
+        contrast_mid_top,
+        contrast_bot_top,
     ], dtype=np.float32)
 
 class MultiTrackDatasetBuilder:
     def __init__(self, base_dataset_path):
         self.root_path = Path(base_dataset_path).expanduser().resolve()
-        # Your labels are in Processed/Color
-        self.label_base = self.root_path / "Processed" / "Color"
+
+        if (self.root_path / "Processed" / "Color").exists():
+            self.dataset_root = self.root_path
+            self.label_base = self.root_path / "Processed" / "Color"
+        elif self.root_path.name == "Color" and self.root_path.is_dir():
+            self.dataset_root = self.root_path.parents[1]   # .../Dataset
+            self.label_base = self.root_path
+        else:
+            raise FileNotFoundError(
+                f"Could not locate Processed/Color from: {self.root_path}"
+            )
+
         self.tracks = {}
         self._discover_tracks()
     
@@ -116,53 +137,82 @@ class MultiTrackDatasetBuilder:
             print(f"❌ Error: No labeled_clusters.json found in {self.label_base}")
 
     def build_dataset(self):
-        VALID_COLORS = {'orange', 'blue', 'yellow', 'unknown'}
+        VALID_COLORS = {'orange', 'blue', 'yellow'}
         self.label_encoder = LabelEncoder()
         X, y_raw = [], []
-        skipped = 0
-        
+
+        total_labels = 0
+        skipped_unknown = 0
+        skipped_invalid_color = 0
+        skipped_missing_file = 0
+        skipped_invalid_features = 0
+        used_per_class = {'blue': 0, 'yellow': 0, 'orange': 0}
+
         print('\n📦 Building dataset from labeled clusters...')
-        
+
         for track_name, track_info in self.tracks.items():
             labels = track_info['labels']
             track_path = track_info['path']
-            
+
             for cluster_file, label_data in tqdm(labels.items(), desc=f'  {track_name}'):
+                total_labels += 1
                 color = str(label_data.get('color', '')).lower().strip()
-                if color not in VALID_COLORS:
-                    skipped += 1
+
+                if color == 'unknown':
+                    skipped_unknown += 1
                     continue
-                
-                # 2. FILE RESOLUTION (Fixing the 326 missing files)
-                # Check 1: In the same folder as the JSON
+
+                if color not in VALID_COLORS:
+                    skipped_invalid_color += 1
+                    continue
+
                 pcd_path = track_path / cluster_file
-                
-                # Check 2: In the 'raw' folder (matching your directory structure)
+
                 if not pcd_path.exists():
-                    pcd_path = self.root_path / "raw" / track_name / cluster_file
-                
-                # Check 3: Final recursive search if path is weird
+                    pcd_path = self.dataset_root / "raw" / track_name / cluster_file
+
                 if not pcd_path.exists():
-                    found = list(self.root_path.rglob(cluster_file))
+                    found = list(self.dataset_root.rglob(cluster_file))
                     if found:
                         pcd_path = found[0]
 
                 if not pcd_path.exists():
-                    skipped += 1
+                    skipped_missing_file += 1
+                    print(f"Missing file: track={track_name}, cluster={cluster_file}")
                     continue
-                
-                # 3. Process
+
                 points = load_pcd_binary(pcd_path)
                 features = extract_features(points)
-                
-                if features is not None:
-                    X.append(features)
-                    y_raw.append(color)
-        
-        X = np.array(X)
+
+                if features is None:
+                    skipped_invalid_features += 1
+                    continue
+
+                X.append(features)
+                y_raw.append(color)
+                used_per_class[color] += 1
+
+        X = np.array(X, dtype=np.float32)
         y = self.label_encoder.fit_transform(y_raw)
-        
-        print(f'\n✅ Dataset built: {len(X)} samples, {skipped} skipped')
+
+        total_skipped = (
+            skipped_unknown +
+            skipped_invalid_color +
+            skipped_missing_file +
+            skipped_invalid_features
+        )
+
+        print(f'\n✅ Dataset built: {len(X)} samples')
+        print(f'   Total labels seen:      {total_labels}')
+        print(f'   Total skipped:          {total_skipped}')
+        print(f'   Skipped unknown:        {skipped_unknown}')
+        print(f'   Skipped invalid color:  {skipped_invalid_color}')
+        print(f'   Skipped missing file:   {skipped_missing_file}')
+        print(f'   Skipped invalid feats:  {skipped_invalid_features}')
+        print(f'   Used blue:              {used_per_class["blue"]}')
+        print(f'   Used yellow:            {used_per_class["yellow"]}')
+        print(f'   Used orange:            {used_per_class["orange"]}')
+
         return X, y, self.label_encoder
 
 class RandomForestConeDetector:
@@ -172,9 +222,16 @@ class RandomForestConeDetector:
         self.best_params = None
         self.label_encoder = None  # Will be set during training
         self.feature_names = [
-            'norm_avg_i', 'norm_std_i', 'v_grad', 'height', 
-            'aspect_ratio', 'contrast', 'reflective_point_pct', 
-            'contrast_diff_bot_mid'
+            'norm_avg_i',
+            'norm_std_i',
+            'v_grad',
+            'height',
+            'aspect_ratio',
+            'contrast',
+            'reflective_point_pct',
+            'contrast_bot_mid',
+            'contrast_mid_top',
+            'contrast_bot_top',
         ]
     
     def cross_validate(self, X_scaled, y, cv_folds=5):
@@ -197,15 +254,15 @@ class RandomForestConeDetector:
 
     def gridsearch(self, X_train, y_train):
         
-        rf = RandomForestClassifier(random_state=42)
+        rf = RandomForestClassifier(random_state=42, class_weight='balanced_subsample')
     
         # Phase 1: COARSE (higher estimators + your full param space)
         print('🔍 Phase 1: Coarse search (100-400 estimators)...')
         coarse_grid = {
             'n_estimators': [20, 50, 100, 150],
-            'max_depth': [5, 10, 15, 25],
+            'max_depth': [5, 10, 15, 25, None],
             'min_samples_split': [10, 20, 30],
-            'min_samples_leaf': [5, 10, 20],
+            'min_samples_leaf': [2, 5, 10, 20],
             'max_features': ['sqrt', 'log2'],
             'bootstrap': [True]
         }
@@ -271,7 +328,9 @@ class RandomForestConeDetector:
         
         print(f'\n[Random Forest Training]')
         print(f'  Train: {len(X_train)} | Test: {len(X_test)}')
-        
+        print('  Train class counts:', np.bincount(y_train))
+        print('  Test class counts: ', np.bincount(y_test))
+    
         # Scale features
         X_train_scaled = self.scaler.fit_transform(X_train)
         X_test_scaled = self.scaler.transform(X_test)
@@ -506,10 +565,15 @@ def main():
     # Train
     detector = RandomForestConeDetector()
     detector.label_encoder = label_encoder  # Set for confusion matrix labels
+
+    start_time = time.perf_counter()
+
     detector.train(X, y)
     detector.save('models/color/color_classifier_rf.pkl')
     detector.save_cpp_ready('models/color/color_classifier.bin')
 
+    elapsed_time = time.perf_counter() - start_time
+    print(f"\n⏱️  Total training time: {elapsed_time:.2f} seconds")
 
 if __name__ == "__main__":
     main()
