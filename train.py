@@ -95,17 +95,13 @@ def load_pcd_binary(filepath):
 
 def extract_features(cluster_points):
     xyz = cluster_points[:, :3]
-
-
-
-    sigma_x = float(xyz[:, 0].std())
-    sigma_y = float(xyz[:, 1].std())
+    intensity = cluster_points[:, 3]
 
 
 
     height = float(xyz[:, 2].max() - xyz[:, 2].min())
-    width = max(sigma_x, sigma_y)
-    depth = min(sigma_x, sigma_y)
+    width = float(xyz[:, 0].max() - xyz[:, 0].min())
+    depth = float(xyz[:, 1].max() - xyz[:, 1].min())
     aspect_ratio = height / (width + 1e-6)
 
 
@@ -117,13 +113,27 @@ def extract_features(cluster_points):
 
 
     center = xyz.mean(axis=0)
-    distancefromlidar = np.linalg.norm(center)
+    distances = np.linalg.norm(xyz - center, axis=1)
+    compactness = np.std(distances) / (np.mean(distances) + 1e-6)
+
+
+
+    intensity_mean = float(intensity.mean())
+    intensity_std = float(intensity.std())
+
+
+
+    cov = np.cov(xyz.T)
+    eigenvalues = np.linalg.eigvalsh(cov)
+    linearity = (eigenvalues[2] - eigenvalues[1]) / (eigenvalues[2] + 1e-6)
+    planarity = (eigenvalues[1] - eigenvalues[0]) / (eigenvalues[2] + 1e-6)
 
 
 
     return np.array([
-        height, width, depth, aspect_ratio,
-        density, volume, distancefromlidar
+        height, width, depth, aspect_ratio, num_points,
+        density, compactness, intensity_mean, intensity_std,
+        linearity, planarity, volume
     ], dtype=np.float32)
 
 
@@ -425,8 +435,9 @@ class RandomForestConeDetector:
         self.split_test_size = split_test_size
         self.split_trials = split_trials
         self.feature_names = [
-            'height', 'width', 'depth', 'aspect_ratio',
-            'density', 'volume', 'distance_from_lidar'
+            'height', 'width', 'depth', 'aspect_ratio', 'num_points',
+            'density', 'compactness', 'intensity_mean', 'intensity_std',
+            'linearity', 'planarity', 'volume'
         ]
 
 
