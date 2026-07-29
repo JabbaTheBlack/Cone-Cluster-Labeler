@@ -95,13 +95,6 @@ def load_pcd_binary(filepath):
 
 def extract_features(cluster_points):
     xyz = cluster_points[:, :3]
-    intensity_raw = cluster_points[:, 3]
-
-
-
-    # Range compensation: raw intensity falls off with distance, so scale it back up
-    distance_sq = xyz[:, 0] ** 2 + xyz[:, 1] ** 2 + xyz[:, 2] ** 2
-    intensity = intensity_raw * distance_sq
 
 
 
@@ -128,14 +121,9 @@ def extract_features(cluster_points):
 
 
 
-    intensity_std = float(intensity.std())
-    intensity_mean = float(intensity.mean())
-
-
-
     return np.array([
         height, width, depth, aspect_ratio,
-        density, intensity_std, intensity_mean, volume, distancefromlidar
+        density, volume, distancefromlidar
     ], dtype=np.float32)
 
 
@@ -438,7 +426,7 @@ class RandomForestConeDetector:
         self.split_trials = split_trials
         self.feature_names = [
             'height', 'width', 'depth', 'aspect_ratio',
-            'density', 'intensity_std', 'intensity_mean', 'volume', 'distance_from_lidar'
+            'density', 'volume', 'distance_from_lidar'
         ]
 
 
@@ -861,7 +849,7 @@ def main():
 
 
 
-    default_dataset = script_dir / 'Dataset' / 'Processed'
+    default_dataset = script_dir / 'Dataset' / 'Processed' / 'Detection'
     default_output = script_dir / 'models' / 'detection' / 'cone_detector_rf.pkl'
     default_output_bin = script_dir / 'models' / 'detection' / 'cone_detector.bin'
 
