@@ -129,12 +129,13 @@ def extract_features(cluster_points):
 
 
     intensity_std = float(intensity.std())
+    intensity_mean = float(intensity.mean())
 
 
 
     return np.array([
         height, width, depth, aspect_ratio,
-        density, intensity_std, volume, distancefromlidar
+        density, intensity_std, intensity_mean, volume, distancefromlidar
     ], dtype=np.float32)
 
 
@@ -437,7 +438,7 @@ class RandomForestConeDetector:
         self.split_trials = split_trials
         self.feature_names = [
             'height', 'width', 'depth', 'aspect_ratio',
-            'density', 'intensity_std', 'volume', 'distance_from_lidar'
+            'density', 'intensity_std', 'intensity_mean', 'volume', 'distance_from_lidar'
         ]
 
 
