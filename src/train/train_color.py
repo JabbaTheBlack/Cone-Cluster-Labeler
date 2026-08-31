@@ -17,6 +17,21 @@ import time
 sns.set(style='whitegrid', context='talk')
 
 
+def find_project_root(start_path: Path | None = None) -> Path:
+    """Walk upward until we find the repository root containing Dataset and src."""
+    current = (start_path or Path(__file__)).resolve()
+    if current.is_file():
+        current = current.parent
+
+    for candidate in [current, *current.parents]:
+        if (candidate / "Dataset").exists() and (candidate / "src").exists():
+            return candidate
+
+    return current
+
+
+REPO_ROOT = find_project_root()
+
 
 def load_pcd_binary(filepath):
     """Load binary PCD file."""
@@ -378,9 +393,9 @@ class RandomForestConeDetector:
         plt.title('Feature Correlation Matrix')
         plt.tight_layout()
         
-        script_dir = Path(__file__).parent
-        (script_dir / 'figures').mkdir(parents=True, exist_ok=True)
-        plt.savefig(script_dir / 'figures' / 'color' / 'feature_correlation.png', dpi=300, bbox_inches='tight')
+        out_dir = REPO_ROOT / 'figures' / 'color'
+        out_dir.mkdir(parents=True, exist_ok=True)
+        plt.savefig(out_dir / 'feature_correlation.png', dpi=300, bbox_inches='tight')
         plt.close()
         print('✓ Saved: figures/detection/feature_correlation.png')
 
@@ -403,9 +418,9 @@ class RandomForestConeDetector:
         plt.xlabel('Predicted Color')
         plt.tight_layout()
 
-        script_dir = Path(__file__).parent
-        (script_dir / 'figures' / 'color').mkdir(parents=True, exist_ok=True)
-        plt.savefig(script_dir / 'figures' / 'color' / 'confusion_matrix.png', dpi=300, bbox_inches='tight')
+        out_dir = REPO_ROOT / 'figures' / 'color'
+        out_dir.mkdir(parents=True, exist_ok=True)
+        plt.savefig(out_dir / 'confusion_matrix.png', dpi=300, bbox_inches='tight')
         plt.close()
         print('✓ Saved: figures/color/confusion_matrix.png')
         
@@ -423,9 +438,9 @@ class RandomForestConeDetector:
         plt.xlabel('Importance Score')
         plt.tight_layout()
 
-        script_dir = Path(__file__).parent
-        (script_dir / 'figures').mkdir(parents=True, exist_ok=True)
-        plt.savefig(script_dir / 'figures' / 'color' / 'feature_importances.png', dpi=300, bbox_inches='tight')
+        out_dir = REPO_ROOT / 'figures' / 'color'
+        out_dir.mkdir(parents=True, exist_ok=True)
+        plt.savefig(out_dir / 'feature_importances.png', dpi=300, bbox_inches='tight')
         print('✓ Saved: figures/color/feature_importances.png')
 
     def save(self, path='cone_detector_rf.pkl'):
@@ -546,7 +561,10 @@ def main():
     )
     args = parser.parse_args()
 
-    dataset_path = Path(args.dataset).expanduser().resolve()
+    dataset_path = Path(args.dataset).expanduser()
+    if not dataset_path.is_absolute():
+        dataset_path = REPO_ROOT / dataset_path
+    dataset_path = dataset_path.resolve()
     print(f"\n🚀 Dataset root: {dataset_path}\n")
 
     builder = MultiTrackDatasetBuilder(dataset_path)
@@ -569,8 +587,8 @@ def main():
     start_time = time.perf_counter()
 
     detector.train(X, y)
-    detector.save('models/color/color_classifier_rf.pkl')
-    detector.save_cpp_ready('models/color/color_classifier.bin')
+    detector.save(str(REPO_ROOT / 'models' / 'color' / 'color_classifier_rf.pkl'))
+    detector.save_cpp_ready(str(REPO_ROOT / 'models' / 'color' / 'color_classifier.bin'))
 
     elapsed_time = time.perf_counter() - start_time
     print(f"\n⏱️  Total training time: {elapsed_time:.2f} seconds")

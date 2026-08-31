@@ -10,6 +10,22 @@ from mcap_ros2.decoder import DecoderFactory
 from rclpy.serialization import deserialize_message
 
 
+def find_project_root(start_path: Path | None = None) -> Path:
+    """Walk upward until we find the repository root containing Dataset and src."""
+    current = (start_path or Path(__file__)).resolve()
+    if current.is_file():
+        current = current.parent
+
+    for candidate in [current, *current.parents]:
+        if (candidate / "Dataset").exists() and (candidate / "src").exists():
+            return candidate
+
+    return current
+
+
+REPO_ROOT = find_project_root()
+
+
 class BagFramePublisher(Node):
     def __init__(self):
         super().__init__('bag_frame_publisher')
@@ -26,9 +42,7 @@ class BagFramePublisher(Node):
         self.publisher = self.create_publisher(PointCloud2, '/labeling/synced_frame', 10)
         
         # Path to mcap bag (sits alongside the Trackdrive clusters it corresponds to)
-        script_dir = Path(__file__).parent.parent
-        self.bag_path  = (script_dir / 'Dataset' / 'raw' / 'Trackdrive' / 'Zalazone_06_02_13'
-                          / 'Zalazone_06_02_13_TRACKDRIVE_0.mcap')
+        self.bag_path  = Path('/home/jabba/Downloads/fireup_11_28_29_MANUAL_0.mcap')
         
         
         # Cache for bag messages indexed by timestamp

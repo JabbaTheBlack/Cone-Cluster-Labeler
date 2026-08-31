@@ -25,6 +25,21 @@ from tqdm import tqdm
 sns.set(style='whitegrid', context='talk')
 
 
+def find_project_root(start_path: Path | None = None) -> Path:
+    """Walk upward until we find the repository root containing Dataset and src."""
+    current = (start_path or Path(__file__)).resolve()
+    if current.is_file():
+        current = current.parent
+
+    for candidate in [current, *current.parents]:
+        if (candidate / "Dataset").exists() and (candidate / "src").exists():
+            return candidate
+
+    return current
+
+
+REPO_ROOT = find_project_root()
+
 
 # ============================================================================
 # UTILS
@@ -675,8 +690,7 @@ class RandomForestConeDetector:
 
 
 
-        script_dir = Path(__file__).parent
-        out_dir = script_dir / 'figures' / 'detection'
+        out_dir = REPO_ROOT / 'figures' / 'detection'
         out_dir.mkdir(parents=True, exist_ok=True)
         plt.savefig(out_dir / 'feature_correlation.png', dpi=300, bbox_inches='tight')
         plt.close()
@@ -699,8 +713,7 @@ class RandomForestConeDetector:
 
 
 
-        script_dir = Path(__file__).parent
-        out_dir = script_dir / 'figures' / 'detection'
+        out_dir = REPO_ROOT / 'figures' / 'detection'
         out_dir.mkdir(parents=True, exist_ok=True)
         plt.savefig(out_dir / 'confusion_matrix.png', dpi=300, bbox_inches='tight')
         plt.close()
@@ -732,8 +745,7 @@ class RandomForestConeDetector:
 
 
 
-        script_dir = Path(__file__).parent
-        out_dir = script_dir / 'figures' / 'detection'
+        out_dir = REPO_ROOT / 'figures' / 'detection'
         out_dir.mkdir(parents=True, exist_ok=True)
         plt.savefig(out_dir / 'feature_importances.png', dpi=300, bbox_inches='tight')
         plt.close()
@@ -801,7 +813,10 @@ class RandomForestConeDetector:
 
 class LogSaver:
     def __init__(self, log_dir='logs'):
-        self.log_dir = Path(log_dir).expanduser()
+        log_path = Path(log_dir).expanduser()
+        if not log_path.is_absolute():
+            log_path = REPO_ROOT / log_path
+        self.log_dir = log_path
         (self.log_dir / 'detection').mkdir(parents=True, exist_ok=True)
         self.log_file = self.log_dir / 'detection' / 'training_log.txt'
 
@@ -856,13 +871,10 @@ def main():
 
 
     parser = argparse.ArgumentParser(description='Random Forest Cone Detector')
-    script_dir = Path(__file__).parent
 
-
-
-    default_dataset = script_dir / 'Dataset' / 'Processed' / 'Detection'
-    default_output = script_dir / 'models' / 'detection' / 'cone_detector_rf.pkl'
-    default_output_bin = script_dir / 'models' / 'detection' / 'cone_detector.bin'
+    default_dataset = REPO_ROOT / 'Dataset' / 'Processed' / 'Detection'
+    default_output = REPO_ROOT / 'models' / 'detection' / 'cone_detector_rf.pkl'
+    default_output_bin = REPO_ROOT / 'models' / 'detection' / 'cone_detector.bin'
 
 
 
@@ -889,8 +901,18 @@ def main():
 
 
 
-    Path(args.output).parent.mkdir(parents=True, exist_ok=True)
-    Path(args.output_bin).parent.mkdir(parents=True, exist_ok=True)
+    output_path = Path(args.output).expanduser()
+    output_bin_path = Path(args.output_bin).expanduser()
+    if not output_path.is_absolute():
+        output_path = REPO_ROOT / output_path
+    if not output_bin_path.is_absolute():
+        output_bin_path = REPO_ROOT / output_bin_path
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_bin_path.parent.mkdir(parents=True, exist_ok=True)
+
+    args.output = str(output_path)
+    args.output_bin = str(output_bin_path)
 
 
 

@@ -9,6 +9,23 @@ import os
 import re
 from pathlib import Path
 
+
+def find_project_root(start_path: Path | None = None) -> Path:
+    """Walk upward until we find the repository root containing Dataset and src."""
+    current = (start_path or Path(__file__)).resolve()
+    if current.is_file():
+        current = current.parent
+
+    for candidate in [current, *current.parents]:
+        if (candidate / "Dataset").exists() and (candidate / "src").exists():
+            return candidate
+
+    return current
+
+
+REPO_ROOT = find_project_root()
+
+
 def extract_frame_number(filename):
     """Extract frame number from filename."""
     match = re.search(r'frame_(\d+)', filename)
@@ -22,16 +39,16 @@ def should_keep_frame(frame_num):
     - Keep frames 250, 260, 270, ... (every 10th starting from 250)
     """
     # Keep every 10th frame
-    if frame_num <= 10:
-        return True
-    if frame_num  % 10 == 0:
+    if frame_num < 10:
+        return False
+    elif frame_num  % 10 == 0:
         return True
     
     return False
 
 def main():
     # Path to cone_clusters directory
-    cone_clusters_dir = Path(__file__).parent / "Dataset" / "raw" / "Skidpad" / "fireup_11_28_29"
+    cone_clusters_dir = REPO_ROOT / "Dataset" / "raw" / "fireup_11_28_29"
     
     if not cone_clusters_dir.exists():
         print(f"Error: Directory {cone_clusters_dir} does not exist!")

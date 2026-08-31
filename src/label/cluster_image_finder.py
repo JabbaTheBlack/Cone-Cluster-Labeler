@@ -26,6 +26,22 @@ import struct
 from pathlib import Path
 
 import rclpy
+
+
+def find_project_root(start_path: Path | None = None) -> Path:
+    """Walk upward until we find the repository root containing Dataset and src."""
+    current = (start_path or Path(__file__)).resolve()
+    if current.is_file():
+        current = current.parent
+
+    for candidate in [current, *current.parents]:
+        if (candidate / "Dataset").exists() and (candidate / "src").exists():
+            return candidate
+
+    return current
+
+
+REPO_ROOT = find_project_root()
 from rclpy.node import Node
 from std_msgs.msg import String
 from mcap.reader import make_reader
@@ -39,9 +55,7 @@ import cv2
 # CONFIGURATION: Hardcoded bag path
 # Keep this pointing at the same bag label.py is labeling clusters from.
 # ============================================================================
-script_dir = Path(__file__).parent
-DEFAULT_BAG_PATH = (script_dir / 'Dataset' / 'raw' / 'Trackdrive' / 'Zalazone_06_02_13'
-                    / 'Zalazone_06_02_13_TRACKDRIVE_0.mcap')
+DEFAULT_BAG_PATH = Path('/home/jabba/Downloads/fireup_11_28_29_MANUAL_0.mcap')
 
 DEFAULT_IMAGE_TOPIC = '/my_camera/pylon_ros2_camera_node/image_raw'
 DEFAULT_POINTCLOUD_TOPIC = '/ouster/points'

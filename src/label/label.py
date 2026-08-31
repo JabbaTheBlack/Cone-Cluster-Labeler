@@ -6,6 +6,22 @@ import numpy as np
 from pathlib import Path
 import struct
 import rclpy
+
+
+def find_project_root(start_path: Path | None = None) -> Path:
+    """Walk upward until we find the repository root containing Dataset and src."""
+    current = (start_path or Path(__file__)).resolve()
+    if current.is_file():
+        current = current.parent
+
+    for candidate in [current, *current.parents]:
+        if (candidate / "Dataset").exists() and (candidate / "src").exists():
+            return candidate
+
+    return current
+
+
+REPO_ROOT = find_project_root()
 from rclpy.node import Node
 from sensor_msgs.msg import PointCloud2, PointField
 from std_msgs.msg import Header
@@ -19,8 +35,7 @@ class ClusterLabelerNode(Node):
         self.publisher = self.create_publisher(PointCloud2, '/labeling/current_cluster', 10)
         self.timestamp_pub = self.create_publisher(std_msgs.msg.String, '/labeling/current_timestamp', 10)
 
-        script_dir = Path(__file__).parent.parent
-        self.clusters_dir = script_dir / 'Dataset' / 'raw' / 'Trackdrive' / 'Zalazone_06_02_13'
+        self.clusters_dir = REPO_ROOT / 'Dataset' / 'raw' / 'fireup_11_28_29'
         self.output_json = self.clusters_dir / 'labeled_clusters.json'
 
         self.labels = {}
