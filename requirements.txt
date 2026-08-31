@@ -6,5 +6,6 @@ matplotlib>=3.5.0
 tqdm>=4.64.0
 
 mcap>=1.0.0
-mcap-ros2-support>=0.5.0
+mcap-ros2-support>=0.5.7
 pyyaml>=6.0
+opencv-python>=5.0.0.93
