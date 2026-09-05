@@ -1,0 +1,2 @@
+{"dataset_size": 1591, "train_size": 1272, "test_size": 319, "train_class_counts": {"blue": 639, "orange": 175, "yellow": 458}, "test_class_counts": {"blue": 160, "orange": 44, "yellow": 115}, "train_accuracy": 0.9960691823899371, "test_accuracy": 0.8056426332288401, "precision": 0.7481346731346731, "recall": 0.7023715415019763, "f1_score": 0.7176865966621774, "epochs": 40}
+
