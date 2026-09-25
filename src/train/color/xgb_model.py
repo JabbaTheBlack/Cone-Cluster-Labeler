@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 from xgboost import XGBClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split, GridSearchCV, cross_validate
+from sklearn.utils.class_weight import compute_sample_weight
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
 from features import FEATURE_NAMES
 
@@ -55,11 +56,12 @@ class XGBoostConeDetector:
             random_state=self.random_state,
             n_jobs=-1
         )
-        
+
+        sample_weights = compute_sample_weight('balanced', y);
         cv_results = cross_validate(
             xgb_temp, X_scaled, y, cv=cv_folds,
             scoring=['accuracy', 'precision_macro', 'recall_macro', 'f1_macro'],
-            return_train_score=True, n_jobs=-1
+            return_train_score=True, n_jobs=-1, params={'sample_weight': sample_weights}
         )
 
         print(f'  CV F1 Macro:  {cv_results["test_f1_macro"].mean():.4f} ± {cv_results["test_f1_macro"].std():.4f}')
@@ -77,6 +79,7 @@ class XGBoostConeDetector:
             random_state=self.random_state,
             n_jobs=-1
         )
+        sample_weights = compute_sample_weight('balanced', y_train)
 
         # Phase 1: Coarse Search
         print('\n🔍 Phase 1: Coarse search...')
@@ -89,7 +92,7 @@ class XGBoostConeDetector:
 
         with Timer('XGBoost GridSearch Phase 1'):
             coarse_search = GridSearchCV(xgb_base, coarse_grid, cv=5, scoring='f1_macro', n_jobs=-1)
-            coarse_search.fit(X_train, y_train)
+            coarse_search.fit(X_train, y_train, sample_weight=sample_weights)
 
         best_coarse = coarse_search.best_params_
         print(f'  Coarse best F1 Macro: {coarse_search.best_score_:.4f} → {best_coarse}')
@@ -108,7 +111,7 @@ class XGBoostConeDetector:
 
         with Timer('XGBoost GridSearch Phase 2'):
             med_search = GridSearchCV(xgb_base, med_grid, cv=5, scoring='f1_macro', n_jobs=-1)
-            med_search.fit(X_train, y_train)
+            med_search.fit(X_train, y_train, sample_weight=sample_weights)
 
         best_med = med_search.best_params_
         print(f'  Medium best F1 Macro: {med_search.best_score_:.4f} → {best_med}')
@@ -127,7 +130,7 @@ class XGBoostConeDetector:
 
         with Timer('XGBoost GridSearch Phase 3'):
             fine_search = GridSearchCV(xgb_base, fine_grid, cv=5, scoring='f1_macro', n_jobs=-1)
-            fine_search.fit(X_train, y_train)
+            fine_search.fit(X_train, y_train, sample_weight=sample_weights)
 
         print(f'\n✓ Progressive GridSearch Complete!')
         print(f'  Final Best F1 Macro: {fine_search.best_score_:.4f}')
@@ -175,7 +178,8 @@ class XGBoostConeDetector:
                 n_jobs=-1
             )
             with Timer('Model fit'):
-                self.model.fit(X_train_scaled, y_train)
+                sample_weights_train = compute_sample_weight('balanced', y_train)
+                self.model.fit(X_train_scaled, y_train, sample_weight=sample_weights_train)
 
         X_full_scaled = self.scaler.transform(X)
 

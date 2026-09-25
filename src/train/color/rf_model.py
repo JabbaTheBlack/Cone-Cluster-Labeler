@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
+from math import prod
 
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
@@ -39,6 +40,19 @@ class TrainingLogger:
             f.write("\n")
             f.write(json.dumps(metrics))
 
+
+class DummyLabelEncoder:
+    """Fallback label encoder for binary yellow mapping."""
+    def __init__(self, classes):
+        self.classes_ = np.array(classes)
+
+    def transform(self, y):
+        return np.array([1 if str(item).lower() == 'yellow' else 0 for item in y])
+
+    def inverse_transform(self, y):
+        return self.classes_[y]
+
+
 class RandomForestConeDetector:
     def __init__(self, repo_root, random_state=42):
         self.repo_root = Path(repo_root)
@@ -48,10 +62,33 @@ class RandomForestConeDetector:
         self.best_params = None
         self.label_encoder = None
         self.feature_names = FEATURE_NAMES
+        self.binary_mode = False
+
+    def _convert_to_binary_yellow(self, y, label_encoder):
+        """Converts multi-class targets into binary: yellow (1) vs non-yellow (0)."""
+        if label_encoder is not None and hasattr(label_encoder, 'classes_'):
+            classes = label_encoder.classes_
+            yellow_indices = [i for i, c in enumerate(classes) if str(c).lower() == 'yellow']
+            if yellow_indices:
+                yellow_idx = yellow_indices[0]
+                y_binary = (y == yellow_idx).astype(int)
+            else:
+                y_binary = np.array([1 if str(val).lower() == 'yellow' else 0 for val in y])
+        else:
+            y_binary = np.array([1 if str(val).lower() == 'yellow' else 0 for val in y])
+
+        binary_encoder = DummyLabelEncoder(classes=['non-yellow', 'yellow'])
+        return y_binary, binary_encoder
 
     def cross_validate(self, X_scaled, y, cv_folds=5):
         print(f'\n🔍 {cv_folds}-Fold Cross-Validation (Macro F1 scoring)...')
-        rf_temp = RandomForestClassifier(**self.best_params, random_state=self.random_state, n_jobs=-1)
+        rf_temp = RandomForestClassifier(
+            **self.best_params,
+            class_weight='balanced_subsample',
+            random_state=self.random_state,
+            n_jobs=-1,
+            verbose=2
+        )
         
         cv_results = cross_validate(
             rf_temp, X_scaled, y, cv=cv_folds,
@@ -70,65 +107,94 @@ class RandomForestConeDetector:
     def gridsearch(self, X_train, y_train):
         rf = RandomForestClassifier(random_state=self.random_state, class_weight='balanced_subsample')
 
-        # Phase 1: Coarse Search
-        print('\n🔍 Phase 1: Coarse search...')
+        # ==========================================
+        # Phase 1: Coarse Search (Broad Exploration)
+        # ==========================================
         coarse_grid = {
-            'n_estimators': [20, 50, 100, 150],
-            'max_depth': [5, 10, 15, 25, None],
-            'min_samples_split': [2, 5, 15],
-            'min_samples_leaf': [1, 2, 6],
+            'n_estimators': [100, 300, 500],
+            'max_depth': [10, 20, 30, None],
+            'min_samples_split': [2, 6, 12],
+            'min_samples_leaf': [1, 3, 6],
             'max_features': ['sqrt', 'log2']
         }
+        n_combos_1 = prod(len(v) for v in coarse_grid.values())
+        print(f'\n🔍 Phase 1: Coarse search... ({n_combos_1} candidates, {n_combos_1 * 5} total fits)')
 
         with Timer('GridSearch Phase 1'):
-            coarse_search = GridSearchCV(rf, coarse_grid, cv=5, scoring='f1_macro', n_jobs=-1)
+            coarse_search = GridSearchCV(
+                rf, coarse_grid, cv=5, scoring='f1_macro', n_jobs=-1, verbose=2
+            )
             coarse_search.fit(X_train, y_train)
 
         best_coarse = coarse_search.best_params_
         print(f'  Coarse best F1 Macro: {coarse_search.best_score_:.4f} → {best_coarse}')
 
-        # Phase 2: Medium Refinement
-        print('🔍 Phase 2: Medium refinement...')
-        n_est_start = max(10, best_coarse['n_estimators'] - 30)
-        n_est_end = min(450, best_coarse['n_estimators'] + 31)
+        # ==========================================
+        # Phase 2: Medium Refinement (Tighter Bounds)
+        # ==========================================
+        c_nest = best_coarse['n_estimators']
+        c_depth = best_coarse['max_depth']
+        c_split = best_coarse['min_samples_split']
+        c_leaf = best_coarse['min_samples_leaf']
+
         med_grid = {
-            'n_estimators': list(range(n_est_start, n_est_end, 10)),
-            'max_depth': [best_coarse['max_depth']] if best_coarse['max_depth'] is not None else [None, 15, 25],
-            'min_samples_split': [best_coarse['min_samples_split']],
-            'min_samples_leaf': [best_coarse['min_samples_leaf']],
-            'max_features': ['sqrt', 'log2']
+            # Search +/- 60 around best coarse n_estimators with step 20
+            'n_estimators': list(range(max(50, c_nest - 60), c_nest + 61, 20)),
+            
+            # Search adjacent depth levels if integer; test high finite depth if None
+            'max_depth': [None, 25, 35] if c_depth is None else sorted(set([max(5, c_depth - 5), c_depth, c_depth + 5])),
+            
+            # Search adjacent split thresholds
+            'min_samples_split': sorted(set([max(2, c_split - 2), c_split, c_split + 2])),
+            
+            # Search adjacent leaf thresholds
+            'min_samples_leaf': sorted(set([max(1, c_leaf - 1), c_leaf, c_leaf + 1])),
+            
+            # Lock in the winning feature selection strategy from Phase 1
+            'max_features': [best_coarse['max_features']]
         }
+        n_combos_2 = prod(len(v) for v in med_grid.values())
+        print(f'\n🔍 Phase 2: Medium refinement... ({n_combos_2} candidates, {n_combos_2 * 5} total fits)')
 
         with Timer('GridSearch Phase 2'):
-            med_search = GridSearchCV(rf, med_grid, cv=5, scoring='f1_macro', n_jobs=-1)
+            med_search = GridSearchCV(
+                rf, med_grid, cv=5, scoring='f1_macro', n_jobs=-1, verbose=2
+            )
             med_search.fit(X_train, y_train)
 
         best_med = med_search.best_params_
         print(f'  Medium best F1 Macro: {med_search.best_score_:.4f} → {best_med}')
 
-        # Phase 3: Fine Tuning
-        print('🔍 Phase 3: Fine tuning...')
-        n_est_fine_start = max(10, best_med['n_estimators'] - 15)
-        n_est_fine_end = min(450, best_med['n_estimators'] + 16)
+        # ==========================================
+        # Phase 3: Fine Tuning (Local Optimization)
+        # ==========================================
+        m_nest = best_med['n_estimators']
+        m_depth = best_med['max_depth']
+        m_split = best_med['min_samples_split']
+        m_leaf = best_med['min_samples_leaf']
+
         fine_grid = {
-            'n_estimators': list(range(n_est_fine_start, n_est_fine_end, 5)),
-            'max_depth': [None, 10, 15, 20, 25, 30] if best_med['max_depth'] is None else
-                         list(range(max(5, best_med['max_depth'] - 5), min(31, best_med['max_depth'] + 6))),
-            'min_samples_split': sorted(set([
-                max(2, best_med['min_samples_split'] - 3),
-                best_med['min_samples_split'],
-                min(20, best_med['min_samples_split'] + 4)
-            ])),
-            'min_samples_leaf': sorted(set([
-                max(1, best_med['min_samples_leaf'] - 2),
-                best_med['min_samples_leaf'],
-                min(10, best_med['min_samples_leaf'] + 3)
-            ])),
-            'max_features': ['sqrt', 'log2']
+            # Fine-tune +/- 15 around best medium n_estimators with step 5
+            'n_estimators': list(range(max(20, m_nest - 15), m_nest + 16, 5)),
+            
+            # Fine-tune depth by +/- 2
+            'max_depth': [None] if m_depth is None else sorted(set([max(3, m_depth - 2), m_depth, m_depth + 2])),
+            
+            # Fine-tune split by +/- 1
+            'min_samples_split': sorted(set([max(2, m_split - 1), m_split, m_split + 1])),
+            
+            # Fine-tune leaf by +/- 1
+            'min_samples_leaf': sorted(set([max(1, m_leaf - 1), m_leaf, m_leaf + 1])),
+            
+            'max_features': [best_med['max_features']]
         }
+        n_combos_3 = prod(len(v) for v in fine_grid.values())
+        print(f'\n🔍 Phase 3: Fine tuning... ({n_combos_3} candidates, {n_combos_3 * 5} total fits)')
 
         with Timer('GridSearch Phase 3'):
-            fine_search = GridSearchCV(rf, fine_grid, cv=5, scoring='f1_macro', n_jobs=-1)
+            fine_search = GridSearchCV(
+                rf, fine_grid, cv=5, scoring='f1_macro', n_jobs=-1, verbose=2
+            )
             fine_search.fit(X_train, y_train)
 
         print(f'\n✓ Progressive GridSearch Complete!')
@@ -139,8 +205,16 @@ class RandomForestConeDetector:
         self.model = fine_search.best_estimator_
         return self.model
 
-    def train(self, X, y, label_encoder, use_gridsearch=True):
-        self.label_encoder = label_encoder
+    def train(self, X, y, label_encoder, use_gridsearch=True, binary_yellow=True):
+        self.binary_mode = binary_yellow
+        
+        if self.binary_mode:
+            print("\n🟡 Mode: Binary Classification (Yellow vs Non-Yellow)")
+            y, self.label_encoder = self._convert_to_binary_yellow(y, label_encoder)
+        else:
+            print("\n🎨 Mode: Multi-Class Classification")
+            self.label_encoder = label_encoder
+
         X_train, X_test, y_train, y_test = train_test_split(
             X, y, test_size=0.2, random_state=self.random_state, stratify=y
         )
@@ -163,11 +237,12 @@ class RandomForestConeDetector:
             self.gridsearch(X_train_scaled, y_train)
         else:
             self.best_params = {
-                'n_estimators': 150,
-                'max_depth': 15,
+                'n_estimators': 200,
+                'max_depth': 20,
                 'min_samples_split': 2,
                 'min_samples_leaf': 1,
-                'max_features': 'sqrt'
+                'max_features': 'sqrt',
+                'criterion': 'gini'
             }
             self.model = RandomForestClassifier(
                 **self.best_params, random_state=self.random_state,
@@ -208,6 +283,7 @@ class RandomForestConeDetector:
         }
 
         log_metrics = {
+            "binary_mode": self.binary_mode,
             "dataset_size": len(X),
             "train_size": len(X_train),
             "test_size": len(X_test),
@@ -284,7 +360,13 @@ class RandomForestConeDetector:
     def save(self, pkl_path, bin_path):
         Path(pkl_path).parent.mkdir(parents=True, exist_ok=True)
         with open(pkl_path, 'wb') as f:
-            pickle.dump({'scaler': self.scaler, 'model': self.model, 'best_params': self.best_params}, f)
+            pickle.dump({
+                'scaler': self.scaler, 
+                'model': self.model, 
+                'best_params': self.best_params,
+                'label_encoder': self.label_encoder,
+                'binary_mode': self.binary_mode
+            }, f)
 
         Path(bin_path).parent.mkdir(parents=True, exist_ok=True)
         scaler_mean = self.scaler.mean_.astype(np.float32)
@@ -306,9 +388,10 @@ class RandomForestConeDetector:
                     probs = vals / (np.sum(vals) + 1e-6)
                     f.write(probs.tobytes())
 
-def run_rf_pipeline(X, y, label_encoder, repo_root, use_gridsearch=True):
+
+def run_rf_pipeline(X, y, label_encoder, repo_root, use_gridsearch=True, binary_yellow=True):
     detector = RandomForestConeDetector(repo_root)
-    detector.train(X, y, label_encoder, use_gridsearch=use_gridsearch)
+    detector.train(X, y, label_encoder, use_gridsearch=use_gridsearch, binary_yellow=binary_yellow)
     detector.save(
         repo_root / 'models' / 'color' / 'random_forest' / 'color_classifier_rf.pkl',
         repo_root / 'models' / 'color' / 'random_forest' / 'color_classifier_rf.bin'

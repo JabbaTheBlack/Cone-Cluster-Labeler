@@ -12,6 +12,7 @@ from features import extract_extended_features
 from rf_model import run_rf_pipeline
 from xgb_model import run_xgb_pipeline
 from pointnet_model import run_pointnet_pipeline
+from pointnet2_model import run_pointnet_pipeline as run_pointnet2_pipeline
 
 def find_project_root(start_path: Path | None = None) -> Path:
     current = (start_path or Path(__file__)).resolve()
@@ -25,7 +26,6 @@ def find_project_root(start_path: Path | None = None) -> Path:
 REPO_ROOT = find_project_root()
 
 def load_pcd_binary(filepath):
-    """Load binary PCD file into numpy array."""
     with open(filepath, 'rb') as f:
         while True:
             line = f.readline().decode('utf-8').strip()
@@ -71,6 +71,9 @@ class MultiTrackDatasetBuilder:
         label_encoder = LabelEncoder()
         data_list, y_raw = [], []
 
+        raw_base = self.dataset_root / "raw"
+        raw_pcd_map = {p.name: p for p in raw_base.rglob('*.pcd')} if raw_base.exists() else {}
+
         print('\n📦 Building dataset from labeled clusters...')
         for track_name, track_info in self.tracks.items():
             labels = track_info['labels']
@@ -80,6 +83,8 @@ class MultiTrackDatasetBuilder:
                 if color not in VALID_COLORS:
                     continue
                 pcd_path = track_path / cluster_file
+                if not pcd_path.exists() and cluster_file in raw_pcd_map:
+                    pcd_path = raw_pcd_map[cluster_file]
                 if not pcd_path.exists():
                     pcd_path = self.dataset_root / "raw" / track_name / cluster_file
                 if not pcd_path.exists():
@@ -108,7 +113,7 @@ class MultiTrackDatasetBuilder:
 def main():
     parser = argparse.ArgumentParser(description="Multi-model Cone Color Classification Training")
     parser.add_argument("--dataset", type=str, required=True, help="Path to Dataset folder")
-    parser.add_argument("--model", type=str, choices=['rf', 'xgb', 'pointnet'], default='rf', help="Model modality")
+    parser.add_argument("--model", type=str, choices=['rf', 'xgb', 'pointnet', 'pointnet2'], default='rf', help="Model modality")
     args = parser.parse_args()
 
     dataset_path = Path(args.dataset).expanduser()
@@ -127,6 +132,9 @@ def main():
     elif args.model == 'pointnet':
         raw_clouds, y, label_encoder = builder.build_dataset(extract_feats=False)
         run_pointnet_pipeline(raw_clouds, y, label_encoder, REPO_ROOT)
+    elif args.model == 'pointnet2':
+        raw_clouds, y, label_encoder = builder.build_dataset(extract_feats=False)
+        run_pointnet2_pipeline(raw_clouds, y, label_encoder, REPO_ROOT)
 
     elapsed = time.perf_counter() - start_time
     print(f"\n⏱️ Execution time: {elapsed:.2f} seconds")
