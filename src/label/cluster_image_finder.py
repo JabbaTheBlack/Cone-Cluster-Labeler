@@ -55,7 +55,7 @@ import cv2
 # CONFIGURATION: Hardcoded bag path
 # Keep this pointing at the same bag label.py is labeling clusters from.
 # ============================================================================
-DEFAULT_BAG_PATH = Path('/home/jabba/Downloads/fireup_11_28_29_MANUAL_0.mcap')
+DEFAULT_BAG_PATH = Path('/home/jabba/Downloads/D25_3_ACCELERATION_0.mcap')
 
 DEFAULT_IMAGE_TOPIC = '/my_camera/pylon_ros2_camera_node/image_raw'
 DEFAULT_POINTCLOUD_TOPIC = '/ouster/points'

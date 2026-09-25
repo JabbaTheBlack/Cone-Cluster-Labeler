@@ -42,7 +42,7 @@ class BagFramePublisher(Node):
         self.publisher = self.create_publisher(PointCloud2, '/labeling/synced_frame', 10)
         
         # Path to mcap bag (sits alongside the Trackdrive clusters it corresponds to)
-        self.bag_path  = Path('/home/jabba/Downloads/fireup_11_28_29_MANUAL_0.mcap')
+        self.bag_path  = Path('/home/jabba/Downloads/D25_3_ACCELERATION_0.mcap')
         
         
         # Cache for bag messages indexed by timestamp

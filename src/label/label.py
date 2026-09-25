@@ -35,7 +35,7 @@ class ClusterLabelerNode(Node):
         self.publisher = self.create_publisher(PointCloud2, '/labeling/current_cluster', 10)
         self.timestamp_pub = self.create_publisher(std_msgs.msg.String, '/labeling/current_timestamp', 10)
 
-        self.clusters_dir = REPO_ROOT / 'Dataset' / 'raw' / 'fireup_11_28_29'
+        self.clusters_dir = REPO_ROOT / 'Dataset' / 'raw' / 'D25_3_ACCEL'
         self.output_json = self.clusters_dir / 'labeled_clusters.json'
 
         self.labels = {}

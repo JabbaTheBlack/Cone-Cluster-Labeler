@@ -48,7 +48,7 @@ def should_keep_frame(frame_num):
 
 def main():
     # Path to cone_clusters directory
-    cone_clusters_dir = REPO_ROOT / "Dataset" / "raw" / "fireup_11_28_29"
+    cone_clusters_dir = REPO_ROOT / "Dataset" / "raw" / "D25_3_ACCEL"   
     
     if not cone_clusters_dir.exists():
         print(f"Error: Directory {cone_clusters_dir} does not exist!")
