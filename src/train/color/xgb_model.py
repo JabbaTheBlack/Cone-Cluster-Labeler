@@ -50,9 +50,10 @@ class XGBoostConeDetector:
 
     def cross_validate(self, X_scaled, y, cv_folds=5):
         print(f'\n🔍 {cv_folds}-Fold Cross-Validation (Macro F1 scoring)...')
+        objective = 'binary:logistic' if len(np.unique(y)) == 2 else 'multi:softprob'
         xgb_temp = XGBClassifier(
             **self.best_params,
-            objective='multi:softprob',
+            objective=objective,
             random_state=self.random_state,
             n_jobs=-1
         )
@@ -73,9 +74,10 @@ class XGBoostConeDetector:
         return cv_results
 
     def gridsearch(self, X_train, y_train):
+        objective = 'binary:logistic' if len(np.unique(y_train)) == 2 else 'multi:softprob'
         xgb_base = XGBClassifier(
-            objective='multi:softprob',
-            eval_metric='mlogloss',
+            objective=objective,
+            eval_metric='logloss' if len(np.unique(y_train)) == 2 else 'mlogloss',
             random_state=self.random_state,
             n_jobs=-1
         )
@@ -170,10 +172,11 @@ class XGBoostConeDetector:
                 'subsample': 0.8,
                 'colsample_bytree': 0.8
             }
+            objective = 'binary:logistic' if len(np.unique(y_train)) == 2 else 'multi:softprob'
             self.model = XGBClassifier(
                 **self.best_params,
-                objective='multi:softprob',
-                eval_metric='mlogloss',
+                objective=objective,
+                eval_metric='logloss' if len(np.unique(y_train)) == 2 else 'mlogloss',
                 random_state=self.random_state,
                 n_jobs=-1
             )

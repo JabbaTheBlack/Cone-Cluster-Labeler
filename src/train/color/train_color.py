@@ -74,13 +74,22 @@ class MultiTrackDatasetBuilder:
         raw_base = self.dataset_root / "raw"
         raw_pcd_map = {p.name: p for p in raw_base.rglob('*.pcd')} if raw_base.exists() else {}
 
+        raw_base = self.dataset_root / "raw"
+        raw_pcd_map = {p.name: p for p in raw_base.rglob('*.pcd')} if raw_base.exists() else {}
+        
+        def remap_color(color: str) -> str:
+            color = str(color).lower().strip()
+            if color not in VALID_COLORS:
+                return None
+            return 'yellow' if color == 'yellow' else 'non-yellow'
+
         print('\n📦 Building dataset from labeled clusters...')
         for track_name, track_info in self.tracks.items():
             labels = track_info['labels']
             track_path = track_info['path']
             for cluster_file, label_data in tqdm(labels.items(), desc=f'  {track_name}'):
-                color = str(label_data.get('color', '')).lower().strip()
-                if color not in VALID_COLORS:
+                binary_color = remap_color(label_data.get('color', ''))
+                if binary_color is None:
                     continue
                 pcd_path = track_path / cluster_file
                 if not pcd_path.exists() and cluster_file in raw_pcd_map:
@@ -102,10 +111,10 @@ class MultiTrackDatasetBuilder:
                     feats = extract_extended_features(points)
                     if feats is not None:
                         data_list.append(feats)
-                        y_raw.append(color)
+                        y_raw.append(binary_color)
                 else:
                     data_list.append(points)
-                    y_raw.append(color)
+                    y_raw.append(binary_color)
 
         y = label_encoder.fit_transform(y_raw)
         return (np.array(data_list, dtype=np.float32) if extract_feats else data_list), y, label_encoder
