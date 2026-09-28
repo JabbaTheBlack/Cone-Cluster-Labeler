@@ -172,7 +172,7 @@ def main():
     parser = argparse.ArgumentParser(description="Unified detection model trainer")
     parser.add_argument("--dataset", required=True, help="Folder to process directly")
     parser.add_argument("--model", choices=["rf", "xgb", "pointnet", "pointnet2"], required=True)
-    parser.add_argument("--epochs", type=int, default=80)
+    parser.add_argument("--epochs", type=int, default=150)
     parser.add_argument("--no-gridsearch", action="store_true")
     args = parser.parse_args()
 

@@ -73,30 +73,189 @@ class XGBoostConeDetector:
 
     def gridsearch(self, X_train, y_train):
         scale_pos_weight = (len(y_train) - sum(y_train)) / max(sum(y_train), 1)
+
         xgb_clf = xgb.XGBClassifier(
             random_state=self.random_state,
             scale_pos_weight=scale_pos_weight,
-            eval_metric='logloss'
+            eval_metric='logloss',
+            n_jobs=-1,
+            tree_method='hist'
         )
 
-        grid = {
-            'n_estimators': [100, 200, 300],
-            'max_depth': [3, 6, 9],
-            'learning_rate': [0.01, 0.1, 0.2],
-            'subsample': [0.8, 1.0],
-            'colsample_bytree': [0.8, 1.0]
+        coarse_grid = {
+            'n_estimators': [300, 400, 500],
+            'max_depth': [3, 5, 7, 9, 12],
+            'learning_rate': [0.01, 0.03, 0.05, 0.1, 0.2],
+            'min_child_weight': [1, 3, 5, 8],
+            'subsample': [0.6, 0.8, 1.0],
+            'colsample_bytree': [0.6, 0.8, 1.0],
+            'gamma': [0.0, 0.1, 0.3, 0.5],
+            'reg_alpha': [0.0, 0.01, 0.1],
+            'reg_lambda': [0.5, 1.0, 2.0, 5.0],
         }
 
-        print('\n🔍 GridSearch Optimization...')
-        with Timer('XGBoost GridSearch'):
-            search = GridSearchCV(xgb_clf, grid, cv=5, scoring='f1', n_jobs=-1, verbose=2)
-            search.fit(X_train, y_train)
+        print('\n🔍 Phase 1: Coarse XGBoost search...')
+        with Timer('XGBoost GridSearch Phase 1'):
+            coarse_search = GridSearchCV(
+                xgb_clf,
+                coarse_grid,
+                cv=5,
+                scoring='f1',
+                n_jobs=-1,
+                verbose=1,
+            )
+            coarse_search.fit(X_train, y_train)
 
-        print(f'  Best F1: {search.best_score_:.4f}')
-        print(f'  Best Params: {search.best_params_}')
+        best_coarse = coarse_search.best_params_
+        print(f'  Coarse best F1: {coarse_search.best_score_:.4f} → {best_coarse}')
 
-        self.best_params = search.best_params_
-        self.model = search.best_estimator_
+        c_nest = best_coarse['n_estimators']
+        c_depth = best_coarse['max_depth']
+        c_lr = best_coarse['learning_rate']
+        c_child = best_coarse['min_child_weight']
+        c_subsample = best_coarse['subsample']
+        c_colsample = best_coarse['colsample_bytree']
+        c_gamma = best_coarse['gamma']
+        c_alpha = best_coarse['reg_alpha']
+        c_lambda = best_coarse['reg_lambda']
+
+        med_grid = {
+            'n_estimators': list(range(max(50, c_nest - 100), c_nest + 101, 25)),
+            'max_depth': sorted(set([
+                max(2, c_depth - 2),
+                max(2, c_depth - 1),
+                c_depth,
+                c_depth + 1,
+                c_depth + 2,
+            ])),
+            'learning_rate': sorted(set([
+                max(0.005, c_lr / 2),
+                max(0.005, c_lr * 0.75),
+                c_lr,
+                c_lr * 1.25,
+                c_lr * 1.5,
+            ])),
+            'min_child_weight': sorted(set([
+                max(1, c_child - 2),
+                max(1, c_child - 1),
+                c_child,
+                c_child + 1,
+                c_child + 2,
+            ])),
+            'subsample': sorted(set([
+                max(0.5, c_subsample - 0.1),
+                c_subsample,
+                min(1.0, c_subsample + 0.1),
+            ])),
+            'colsample_bytree': sorted(set([
+                max(0.5, c_colsample - 0.1),
+                c_colsample,
+                min(1.0, c_colsample + 0.1),
+            ])),
+            'gamma': sorted(set([
+                max(0.0, c_gamma - 0.1),
+                c_gamma,
+                c_gamma + 0.1,
+            ])),
+            'reg_alpha': sorted(set([
+                max(0.0, c_alpha / 2),
+                c_alpha,
+                c_alpha * 2 if c_alpha > 0 else 0.01,
+            ])),
+            'reg_lambda': sorted(set([
+                max(0.01, c_lambda / 2),
+                c_lambda,
+                c_lambda * 2,
+            ])),
+        }
+
+        print('\n🔍 Phase 2: Medium XGBoost refinement...')
+        with Timer('XGBoost GridSearch Phase 2'):
+            med_search = GridSearchCV(
+                xgb_clf,
+                med_grid,
+                cv=5,
+                scoring='f1',
+                n_jobs=-1,
+                verbose=1,
+            )
+            med_search.fit(X_train, y_train)
+
+        best_med = med_search.best_params_
+        print(f'  Medium best F1: {med_search.best_score_:.4f} → {best_med}')
+
+        m_nest = best_med['n_estimators']
+        m_depth = best_med['max_depth']
+        m_lr = best_med['learning_rate']
+        m_child = best_med['min_child_weight']
+        m_subsample = best_med['subsample']
+        m_colsample = best_med['colsample_bytree']
+        m_gamma = best_med['gamma']
+        m_alpha = best_med['reg_alpha']
+        m_lambda = best_med['reg_lambda']
+
+        fine_grid = {
+            'n_estimators': list(range(max(20, m_nest - 30), m_nest + 31, 10)),
+            'max_depth': sorted(set([
+                max(2, m_depth - 1),
+                m_depth,
+                m_depth + 1,
+            ])),
+            'learning_rate': sorted(set([
+                max(0.001, m_lr * 0.8),
+                m_lr,
+                m_lr * 1.2,
+            ])),
+            'min_child_weight': sorted(set([
+                max(1, m_child - 1),
+                m_child,
+                m_child + 1,
+            ])),
+            'subsample': sorted(set([
+                max(0.5, m_subsample - 0.05),
+                m_subsample,
+                min(1.0, m_subsample + 0.05),
+            ])),
+            'colsample_bytree': sorted(set([
+                max(0.5, m_colsample - 0.05),
+                m_colsample,
+                min(1.0, m_colsample + 0.05),
+            ])),
+            'gamma': sorted(set([
+                max(0.0, m_gamma - 0.05),
+                m_gamma,
+                m_gamma + 0.05,
+            ])),
+            'reg_alpha': sorted(set([
+                max(0.0, m_alpha * 0.8),
+                m_alpha,
+                m_alpha * 1.2 if m_alpha > 0 else 0.01,
+            ])),
+            'reg_lambda': sorted(set([
+                max(0.01, m_lambda * 0.8),
+                m_lambda,
+                m_lambda * 1.2,
+            ])),
+        }
+
+        print('\n🔍 Phase 3: Fine XGBoost tuning...')
+        with Timer('XGBoost GridSearch Phase 3'):
+            fine_search = GridSearchCV(
+                xgb_clf,
+                fine_grid,
+                cv=5,
+                scoring='f1',
+                n_jobs=-1,
+                verbose=1,
+            )
+            fine_search.fit(X_train, y_train)
+
+        print('\n✓ Progressive XGBoost GridSearch Complete!')
+        print(f'  Final Best F1: {fine_search.best_score_:.4f}')
+        print(f'  Final Best Params: {fine_search.best_params_}')
+
+        self.best_params = fine_search.best_params_
+        self.model = fine_search.best_estimator_
         return self.model
 
     def train(self, X, y, use_gridsearch=True):

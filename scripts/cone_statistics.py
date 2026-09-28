@@ -759,7 +759,7 @@ def find_project_root(start_path: Optional[Path] = None) -> Path:
 REPO_ROOT = find_project_root()
 
 # Reference distance (meters) used to normalize distance-compensated intensity.
-INTENSITY_REF_DISTANCE = 5.0
+INTENSITY_REF_DISTANCE = 10.0
 
 
 def load_pcd_binary(filepath: Path) -> Optional[np.ndarray]:
@@ -1611,548 +1611,1226 @@ class ConeDatasetAnalyzer:
 
     #     print(f"Global unmixing complete. Figures saved in: {self.output_dir}")
 
-    # def analyze_and_plot_cone_intensity_unmixing(
-    #     self,
-    #     records_color: List[Dict],
-    #     ref_distance: float = INTENSITY_REF_DISTANCE,
-    # ):
-    #     """
-    #     Aggregate all orange and blue cone points separately.
-
-    #     A separate two-component GMM is fitted to:
-    #     - all orange cone point intensities
-    #     - all blue cone point intensities
-
-    #     For each colour, the lower-intensity component is the plastic body and
-    #     the higher-intensity component is white-tape candidate points.
-
-    #     Orange tape and blue tape are combined only after their respective
-    #     colour-specific classifications.
-    #     """
-    #     print("\nAggregating Orange and Blue clusters for separate GMM body/tape separation...")
-
-    #     all_orange_d, all_orange_i = [], []
-    #     all_blue_d, all_blue_i = [], []
-
-    #     for r in tqdm(records_color, desc="Aggregating labelled cone points"):
-    #         color = r["color"]
-
-    #         if color not in {"orange", "blue"}:
-    #             continue
-
-    #         pcd_path = r.get("pcd_path")
-    #         if not pcd_path or not pcd_path.exists():
-    #             continue
-
-    #         pts = load_pcd_binary(pcd_path)
-    #         if pts is None or len(pts) < 3:
-    #             continue
-
-    #         distance = float(r["distance"])
-    #         intensities = np.clip(pts[:, 3], 0, 255).astype(np.float64)
-
-    #         if color == "orange":
-    #             all_orange_d.extend([distance] * len(intensities))
-    #             all_orange_i.extend(intensities)
-    #         else:
-    #             all_blue_d.extend([distance] * len(intensities))
-    #             all_blue_i.extend(intensities)
-
-    #     all_orange_d = np.asarray(all_orange_d, dtype=np.float64)
-    #     all_orange_i = np.asarray(all_orange_i, dtype=np.float64)
-
-    #     all_blue_d = np.asarray(all_blue_d, dtype=np.float64)
-    #     all_blue_i = np.asarray(all_blue_i, dtype=np.float64)
-
-    #     if len(all_orange_i) == 0 or len(all_blue_i) == 0:
-    #         print("Not enough orange and blue points for separate GMM fitting.")
-    #         return
-
-    #     def weighted_gaussian_pdf(
-    #         x: np.ndarray,
-    #         mean: float,
-    #         std: float,
-    #         weight: float,
-    #     ) -> np.ndarray:
-    #         std = max(float(std), 1e-6)
-    #         return (
-    #             weight
-    #             * np.exp(-0.5 * ((x - mean) / std) ** 2)
-    #             / (std * np.sqrt(2.0 * np.pi))
-    #         )
-
-    #     def fit_color_gmm(
-    #         intensities: np.ndarray,
-    #         color_name: str,
-    #     ) -> Tuple[np.ndarray, np.ndarray, float, Dict[str, float]]:
-    #         """
-    #         Fit a 2-component GMM to a single colour's aggregate intensities.
-
-    #         Returns:
-    #             body_mask
-    #             tape_mask
-    #             GMM component intersection threshold
-    #             fitted component information
-    #         """
-    #         if len(intensities) < 10:
-    #             raise RuntimeError(
-    #                 f"Not enough {color_name} points for two-component GMM fitting."
-    #             )
-
-    #         gmm = GaussianMixture(
-    #             n_components=2,
-    #             covariance_type="full",
-    #             n_init=20,
-    #             random_state=42,
-    #             reg_covar=1e-4,
-    #         )
-    #         gmm.fit(intensities.reshape(-1, 1))
-
-    #         means = gmm.means_.flatten()
-    #         variances = gmm.covariances_.reshape(-1)
-    #         stds = np.sqrt(np.maximum(variances, 1e-12))
-    #         weights = gmm.weights_.flatten()
-
-    #         component_order = np.argsort(means)
-    #         body_component = int(component_order[0])
-    #         tape_component = int(component_order[1])
-
-    #         body_mean = float(means[body_component])
-    #         body_std = float(stds[body_component])
-    #         body_weight = float(weights[body_component])
-
-    #         tape_mean = float(means[tape_component])
-    #         tape_std = float(stds[tape_component])
-    #         tape_weight = float(weights[tape_component])
-
-    #         # The decision boundary is the weighted-Gaussian crossing between
-    #         # the learned body and tape components, not an intensity percentile.
-    #         x_search = np.linspace(body_mean, tape_mean, 10000)
-
-    #         body_pdf = weighted_gaussian_pdf(
-    #             x_search,
-    #             body_mean,
-    #             body_std,
-    #             body_weight,
-    #         )
-    #         tape_pdf = weighted_gaussian_pdf(
-    #             x_search,
-    #             tape_mean,
-    #             tape_std,
-    #             tape_weight,
-    #         )
-
-    #         separation_threshold = float(
-    #             x_search[np.argmin(np.abs(body_pdf - tape_pdf))]
-    #         )
-
-    #         posteriors = gmm.predict_proba(intensities.reshape(-1, 1))
-    #         tape_probability = posteriors[:, tape_component]
-
-    #         # Require both high-component membership and a value above the
-    #         # learned intersection boundary.
-    #         tape_mask = (
-    #             (tape_probability >= 0.5)
-    #             & (intensities >= separation_threshold)
-    #         )
-    #         body_mask = ~tape_mask
-
-    #         info = {
-    #             "body_mean": body_mean,
-    #             "body_std": body_std,
-    #             "body_weight": body_weight,
-    #             "tape_mean": tape_mean,
-    #             "tape_std": tape_std,
-    #             "tape_weight": tape_weight,
-    #             "threshold": separation_threshold,
-    #         }
-
-    #         print(f"\n--- {color_name.capitalize()} GMM Body/Tape Separation ---")
-    #         print(
-    #             f"{color_name.capitalize()} body component: "
-    #             f"mean={body_mean:.2f}, std={body_std:.2f}, "
-    #             f"weight={body_weight:.3f}"
-    #         )
-    #         print(
-    #             f"{color_name.capitalize()} tape component: "
-    #             f"mean={tape_mean:.2f}, std={tape_std:.2f}, "
-    #             f"weight={tape_weight:.3f}"
-    #         )
-    #         print(
-    #             f"{color_name.capitalize()} GMM separation threshold: "
-    #             f"{separation_threshold:.2f}"
-    #         )
-    #         print(f"{color_name.capitalize()} body points: {np.sum(body_mask)}")
-    #         print(f"{color_name.capitalize()} tape points: {np.sum(tape_mask)}")
-
-    #         return body_mask, tape_mask, separation_threshold, info
-
-    #     orange_body_mask, orange_tape_mask, orange_threshold, orange_gmm_info = (
-    #         fit_color_gmm(all_orange_i, "orange")
-    #     )
-
-    #     blue_body_mask, blue_tape_mask, blue_threshold, blue_gmm_info = (
-    #         fit_color_gmm(all_blue_i, "blue")
-    #     )
-
-    #     # Body points remain colour-specific.
-    #     o_d = all_orange_d[orange_body_mask]
-    #     o_i = all_orange_i[orange_body_mask]
-
-    #     b_d = all_blue_d[blue_body_mask]
-    #     b_i = all_blue_i[blue_body_mask]
-
-    #     # White tape is pooled only after independent orange and blue GMM splits.
-    #     orange_tape_d = all_orange_d[orange_tape_mask]
-    #     orange_tape_i = all_orange_i[orange_tape_mask]
-
-    #     blue_tape_d = all_blue_d[blue_tape_mask]
-    #     blue_tape_i = all_blue_i[blue_tape_mask]
-
-    #     w_d = np.concatenate([orange_tape_d, blue_tape_d])
-    #     w_i = np.concatenate([orange_tape_i, blue_tape_i])
-
-    #     if len(o_i) == 0 or len(b_i) == 0 or len(w_i) == 0:
-    #         print("Separate GMM separation produced an empty group; cannot continue.")
-    #         return
-
-    #     print("\n--- Separate Orange / Blue GMM Summary ---")
-    #     print(f"Orange pooled points: {len(all_orange_i)}")
-    #     print(f"Blue pooled points:   {len(all_blue_i)}")
-    #     print(f"Orange GMM threshold: {orange_threshold:.2f}")
-    #     print(f"Blue GMM threshold:   {blue_threshold:.2f}")
-    #     print(f"Orange body points:   {len(o_i)}")
-    #     print(f"Orange tape points:   {len(orange_tape_i)}")
-    #     print(f"Blue body points:     {len(b_i)}")
-    #     print(f"Blue tape points:     {len(blue_tape_i)}")
-    #     print(f"Combined white tape:  {len(w_i)}")
-
-    #     # -------------------------------------------------------------------------
-    #     # Distance decay fit.
-    #     # The b >= 0 bound prevents an unphysical increasing intensity model.
-    #     # -------------------------------------------------------------------------
-    #     def power_decay(d: np.ndarray, a: float, b: float) -> np.ndarray:
-    #         return a * np.power(np.maximum(d, 1e-6), -b)
-
-    #     fits = {}
-    #     groups = [
-    #         ("Orange Body", o_d, o_i),
-    #         ("Blue Body", b_d, b_i),
-    #         ("White Tape", w_d, w_i),
-    #     ]
-
-    #     for name, d_arr, i_arr in groups:
-    #         valid = (
-    #             np.isfinite(d_arr)
-    #             & np.isfinite(i_arr)
-    #             & (d_arr > 0.0)
-    #             & (i_arr >= 0.0)
-    #         )
-
-    #         d_fit = d_arr[valid]
-    #         i_fit = i_arr[valid]
-
-    #         if len(d_fit) < 6:
-    #             print(f"Warning: insufficient points for {name} fit.")
-    #             fits[name] = np.array([float(np.mean(i_fit)), 0.0])
-    #             continue
-
-    #         try:
-    #             popt, _ = curve_fit(
-    #                 power_decay,
-    #                 d_fit,
-    #                 i_fit,
-    #                 p0=[max(float(np.mean(i_fit)), 1.0), 0.5],
-    #                 bounds=([0.0, 0.0], [255.0, 5.0]),
-    #                 maxfev=20000,
-    #             )
-    #             fits[name] = popt
-    #         except Exception as exc:
-    #             print(f"Warning: fit failed for {name}: {exc}")
-    #             fits[name] = np.array([float(np.mean(i_fit)), 0.0])
-
-    #     # Normalize every group to the reference distance.
-    #     # Given I(d) = a*d^(-b), I(ref) = I(d)*(d/ref)^b.
-    #     o_i_norm = np.clip(
-    #         o_i * np.power(o_d / ref_distance, fits["Orange Body"][1]),
-    #         0,
-    #         255,
-    #     )
-    #     b_i_norm = np.clip(
-    #         b_i * np.power(b_d / ref_distance, fits["Blue Body"][1]),
-    #         0,
-    #         255,
-    #     )
-    #     w_i_norm = np.clip(
-    #         w_i * np.power(w_d / ref_distance, fits["White Tape"][1]),
-    #         0,
-    #         255,
-    #     )
-
-    #     max_distance = max(
-    #         25.0,
-    #         float(np.max(o_d)),
-    #         float(np.max(b_d)),
-    #         float(np.max(w_d)),
-    #     )
-    #     d_grid = np.linspace(1.0, max_distance, 200)
-
-    #     # -------------------------------------------------------------------------
-    #     # Graph 1: combined raw and normalized data.
-    #     # -------------------------------------------------------------------------
-    #     fig, axes = plt.subplots(2, 1, figsize=(12, 10), sharex=True)
-
-    #     axes[0].scatter(
-    #         o_d,
-    #         o_i,
-    #         alpha=0.12,
-    #         color="tab:orange",
-    #         s=10,
-    #         label="Orange Body Points",
-    #     )
-    #     axes[0].scatter(
-    #         b_d,
-    #         b_i,
-    #         alpha=0.12,
-    #         color="tab:blue",
-    #         s=10,
-    #         label="Blue Body Points",
-    #     )
-    #     axes[0].scatter(
-    #         w_d,
-    #         w_i,
-    #         alpha=0.12,
-    #         color="gray",
-    #         s=10,
-    #         label="White Tape Points",
-    #     )
-
-    #     axes[0].plot(
-    #         d_grid,
-    #         power_decay(d_grid, *fits["Orange Body"]),
-    #         color="darkorange",
-    #         lw=2.5,
-    #         label="Orange Body Fit",
-    #     )
-    #     axes[0].plot(
-    #         d_grid,
-    #         power_decay(d_grid, *fits["Blue Body"]),
-    #         color="navy",
-    #         lw=2.5,
-    #         label="Blue Body Fit",
-    #     )
-    #     axes[0].plot(
-    #         d_grid,
-    #         power_decay(d_grid, *fits["White Tape"]),
-    #         color="black",
-    #         lw=2.5,
-    #         linestyle="--",
-    #         label="White Tape Fit",
-    #     )
-
-    #     axes[0].axhline(
-    #         orange_threshold,
-    #         color="darkorange",
-    #         linestyle=":",
-    #         lw=2.0,
-    #         label=f"Orange GMM Threshold = {orange_threshold:.1f}",
-    #     )
-    #     axes[0].axhline(
-    #         blue_threshold,
-    #         color="navy",
-    #         linestyle=":",
-    #         lw=2.0,
-    #         label=f"Blue GMM Threshold = {blue_threshold:.1f}",
-    #     )
-
-    #     axes[0].set_ylabel("Raw Intensity (0-255)")
-    #     axes[0].set_title("Globally Aggregated LiDAR Intensity: Separate Orange/Blue GMM")
-    #     axes[0].legend(loc="upper right")
-
-    #     axes[1].scatter(
-    #         o_d,
-    #         o_i_norm,
-    #         alpha=0.12,
-    #         color="tab:orange",
-    #         s=10,
-    #         label="Orange Body",
-    #     )
-    #     axes[1].scatter(
-    #         b_d,
-    #         b_i_norm,
-    #         alpha=0.12,
-    #         color="tab:blue",
-    #         s=10,
-    #         label="Blue Body",
-    #     )
-    #     axes[1].scatter(
-    #         w_d,
-    #         w_i_norm,
-    #         alpha=0.12,
-    #         color="gray",
-    #         s=10,
-    #         label="White Tape",
-    #     )
-
-    #     axes[1].set_xlabel("Distance from LiDAR (m)")
-    #     axes[1].set_ylabel(f"Normalized Intensity at {ref_distance} m (0-255)")
-    #     axes[1].set_title("Distance-Normalized Intensity After Separate GMM Separation")
-    #     axes[1].legend(loc="upper right")
-
-    #     plt.tight_layout()
-    #     fig.savefig(
-    #         self.output_dir / "combined_intensity_decay_and_normalized.png",
-    #         dpi=300,
-    #     )
-    #     plt.close(fig)
-
-    #     # -------------------------------------------------------------------------
-    #     # Graph 2: orange body vs orange-derived white tape.
-    #     # -------------------------------------------------------------------------
-    #     fig, axes = plt.subplots(1, 2, figsize=(14, 6))
-
-    #     axes[0].scatter(
-    #         o_d,
-    #         o_i,
-    #         alpha=0.15,
-    #         color="tab:orange",
-    #         s=12,
-    #         label="Orange Plastic Body",
-    #     )
-    #     axes[0].scatter(
-    #         orange_tape_d,
-    #         orange_tape_i,
-    #         alpha=0.15,
-    #         color="gray",
-    #         s=12,
-    #         label="Orange-Derived White Tape",
-    #     )
-    #     axes[0].plot(
-    #         d_grid,
-    #         power_decay(d_grid, *fits["Orange Body"]),
-    #         color="darkorange",
-    #         lw=2.5,
-    #     )
-    #     axes[0].axhline(
-    #         orange_threshold,
-    #         color="darkorange",
-    #         linestyle="--",
-    #         lw=2.0,
-    #         label=f"Orange GMM Threshold = {orange_threshold:.1f}",
-    #     )
-    #     axes[0].set_xlabel("Distance (m)")
-    #     axes[0].set_ylabel("Raw Intensity (0-255)")
-    #     axes[0].set_title("Orange GMM: Orange Body vs. White Tape")
-    #     axes[0].legend()
-
-    #     orange_tape_i_norm = np.clip(
-    #         orange_tape_i
-    #         * np.power(
-    #             orange_tape_d / ref_distance,
-    #             fits["White Tape"][1],
-    #         ),
-    #         0,
-    #         255,
-    #     )
-
-    #     sns.kdeplot(
-    #         o_i_norm,
-    #         ax=axes[1],
-    #         color="tab:orange",
-    #         fill=True,
-    #         label="Orange Body",
-    #     )
-    #     sns.kdeplot(
-    #         orange_tape_i_norm,
-    #         ax=axes[1],
-    #         color="gray",
-    #         fill=True,
-    #         label="Orange-Derived White Tape",
-    #     )
-    #     axes[1].set_xlabel(f"Normalized Intensity at {ref_distance} m (0-255)")
-    #     axes[1].set_ylabel("Density")
-    #     axes[1].set_title("Normalized Distribution: Orange vs. White")
-    #     axes[1].legend()
-
-    #     plt.tight_layout()
-    #     fig.savefig(self.output_dir / "orange_vs_white_intensity.png", dpi=300)
-    #     plt.close(fig)
-
-    #     # -------------------------------------------------------------------------
-    #     # Graph 3: blue body vs blue-derived white tape.
-    #     # -------------------------------------------------------------------------
-    #     fig, axes = plt.subplots(1, 2, figsize=(14, 6))
-
-    #     axes[0].scatter(
-    #         b_d,
-    #         b_i,
-    #         alpha=0.15,
-    #         color="tab:blue",
-    #         s=12,
-    #         label="Blue Plastic Body",
-    #     )
-    #     axes[0].scatter(
-    #         blue_tape_d,
-    #         blue_tape_i,
-    #         alpha=0.15,
-    #         color="gray",
-    #         s=12,
-    #         label="Blue-Derived White Tape",
-    #     )
-    #     axes[0].plot(
-    #         d_grid,
-    #         power_decay(d_grid, *fits["Blue Body"]),
-    #         color="navy",
-    #         lw=2.5,
-    #     )
-    #     axes[0].axhline(
-    #         blue_threshold,
-    #         color="navy",
-    #         linestyle="--",
-    #         lw=2.0,
-    #         label=f"Blue GMM Threshold = {blue_threshold:.1f}",
-    #     )
-    #     axes[0].set_xlabel("Distance (m)")
-    #     axes[0].set_ylabel("Raw Intensity (0-255)")
-    #     axes[0].set_title("Blue GMM: Blue Body vs. White Tape")
-    #     axes[0].legend()
-
-    #     blue_tape_i_norm = np.clip(
-    #         blue_tape_i
-    #         * np.power(
-    #             blue_tape_d / ref_distance,
-    #             fits["White Tape"][1],
-    #         ),
-    #         0,
-    #         255,
-    #     )
-
-    #     sns.kdeplot(
-    #         b_i_norm,
-    #         ax=axes[1],
-    #         color="tab:blue",
-    #         fill=True,
-    #         label="Blue Body",
-    #     )
-    #     sns.kdeplot(
-    #         blue_tape_i_norm,
-    #         ax=axes[1],
-    #         color="gray",
-    #         fill=True,
-    #         label="Blue-Derived White Tape",
-    #     )
-    #     axes[1].set_xlabel(f"Normalized Intensity at {ref_distance} m (0-255)")
-    #     axes[1].set_ylabel("Density")
-    #     axes[1].set_title("Normalized Distribution: Blue vs. White")
-    #     axes[1].legend()
-
-    #     plt.tight_layout()
-    #     fig.savefig(self.output_dir / "blue_vs_white_intensity.png", dpi=300)
-    #     plt.close(fig)
-
-    #     print(f"Separate orange/blue GMM unmixing complete. Figures saved in: {self.output_dir}")
-
-    
+    def analyze_and_plot_cone_intensity_unmixing(
+        self,
+        records_color: List[Dict],
+        ref_distance: float = INTENSITY_REF_DISTANCE,
+    ):
+        """
+        Generate the combined intensity diagram for:
+
+            - Orange body
+            - Blue body
+            - Yellow body
+            - White tape from orange/blue cones
+            - Black regions from yellow cones
+
+        Yellow cones are never treated as white-tape cones.
+        """
+        print("\nAggregating orange, blue, and yellow cone points...")
+
+        orange_distances = []
+        orange_intensities = []
+
+        blue_distances = []
+        blue_intensities = []
+
+        yellow_distances = []
+        yellow_intensities = []
+
+        for record in tqdm(
+            records_color,
+            desc="Aggregating labelled cone points",
+        ):
+            color = str(record.get("color", "")).lower().strip()
+            pcd_path = record.get("pcd_path")
+
+            if color not in {"orange", "blue", "yellow"}:
+                continue
+
+            if pcd_path is None:
+                continue
+
+            pcd_path = Path(pcd_path)
+
+            if not pcd_path.exists():
+                continue
+
+            points = load_pcd_binary(pcd_path)
+
+            if points is None or len(points) < 3:
+                continue
+
+            distance = float(record["distance"])
+            intensities = np.clip(
+                points[:, 3].astype(np.float64),
+                0.0,
+                255.0,
+            )
+
+            distances = [distance] * len(intensities)
+
+            if color == "orange":
+                orange_distances.extend(distances)
+                orange_intensities.extend(intensities)
+
+            elif color == "blue":
+                blue_distances.extend(distances)
+                blue_intensities.extend(intensities)
+
+            elif color == "yellow":
+                yellow_distances.extend(distances)
+                yellow_intensities.extend(intensities)
+
+        orange_distances = np.asarray(
+            orange_distances,
+            dtype=np.float64,
+        )
+        orange_intensities = np.asarray(
+            orange_intensities,
+            dtype=np.float64,
+        )
+
+        blue_distances = np.asarray(
+            blue_distances,
+            dtype=np.float64,
+        )
+        blue_intensities = np.asarray(
+            blue_intensities,
+            dtype=np.float64,
+        )
+
+        yellow_distances = np.asarray(
+            yellow_distances,
+            dtype=np.float64,
+        )
+        yellow_intensities = np.asarray(
+            yellow_intensities,
+            dtype=np.float64,
+        )
+
+        if len(orange_intensities) < 30:
+            raise RuntimeError(
+                "Not enough orange points for intensity separation."
+            )
+
+        if len(blue_intensities) < 30:
+            raise RuntimeError(
+                "Not enough blue points for intensity separation."
+            )
+
+        if len(yellow_intensities) < 30:
+            raise RuntimeError(
+                "Not enough yellow points for intensity separation."
+            )
+
+        def weighted_gaussian_pdf(
+            values: np.ndarray,
+            mean: float,
+            standard_deviation: float,
+            weight: float,
+        ) -> np.ndarray:
+            standard_deviation = max(
+                float(standard_deviation),
+                1.0e-6,
+            )
+
+            return (
+                weight
+                * np.exp(
+                    -0.5
+                    * ((values - mean) / standard_deviation) ** 2
+                )
+                / (
+                    standard_deviation
+                    * np.sqrt(2.0 * np.pi)
+                )
+            )
+
+        def fit_body_tape_gmm(
+            intensities: np.ndarray,
+            color_name: str,
+        ):
+            gmm = GaussianMixture(
+                n_components=2,
+                covariance_type="full",
+                n_init=30,
+                max_iter=1000,
+                random_state=42,
+                reg_covar=1.0e-4,
+            )
+
+            gmm.fit(intensities.reshape(-1, 1))
+
+            means = gmm.means_.reshape(-1)
+            variances = gmm.covariances_.reshape(-1)
+            standard_deviations = np.sqrt(
+                np.maximum(variances, 1.0e-12)
+            )
+            weights = gmm.weights_.reshape(-1)
+
+            ordered_components = np.argsort(means)
+
+            body_component = int(ordered_components[0])
+            tape_component = int(ordered_components[1])
+
+            body_mean = float(means[body_component])
+            body_std = float(
+                standard_deviations[body_component]
+            )
+            body_weight = float(weights[body_component])
+
+            tape_mean = float(means[tape_component])
+            tape_std = float(
+                standard_deviations[tape_component]
+            )
+            tape_weight = float(weights[tape_component])
+
+            search_grid = np.linspace(
+                body_mean,
+                tape_mean,
+                10000,
+            )
+
+            body_pdf = weighted_gaussian_pdf(
+                search_grid,
+                body_mean,
+                body_std,
+                body_weight,
+            )
+
+            tape_pdf = weighted_gaussian_pdf(
+                search_grid,
+                tape_mean,
+                tape_std,
+                tape_weight,
+            )
+
+            threshold = float(
+                search_grid[
+                    np.argmin(
+                        np.abs(body_pdf - tape_pdf)
+                    )
+                ]
+            )
+
+            posteriors = gmm.predict_proba(
+                intensities.reshape(-1, 1)
+            )
+
+            tape_probability = posteriors[:, tape_component]
+
+            tape_mask = (
+                (tape_probability >= 0.5)
+                & (intensities >= threshold)
+            )
+
+            body_mask = ~tape_mask
+
+            print(f"\n--- {color_name.capitalize()} GMM ---")
+            print(
+                f"{color_name.capitalize()} body: "
+                f"mean={body_mean:.2f}, "
+                f"std={body_std:.2f}, "
+                f"weight={body_weight:.3f}, "
+                f"points={np.sum(body_mask)}"
+            )
+            print(
+                f"{color_name.capitalize()} tape: "
+                f"mean={tape_mean:.2f}, "
+                f"std={tape_std:.2f}, "
+                f"weight={tape_weight:.3f}, "
+                f"points={np.sum(tape_mask)}"
+            )
+            print(
+                f"{color_name.capitalize()} threshold: "
+                f"{threshold:.2f}"
+            )
+
+            return {
+                "gmm": gmm,
+                "body_mask": body_mask,
+                "tape_mask": tape_mask,
+                "threshold": threshold,
+                "body_mean": body_mean,
+                "tape_mean": tape_mean,
+            }
+
+        def fit_yellow_black_gmm(
+            intensities: np.ndarray,
+        ):
+            gmm = GaussianMixture(
+                n_components=2,
+                covariance_type="full",
+                n_init=30,
+                max_iter=1000,
+                random_state=42,
+                reg_covar=1.0e-4,
+            )
+
+            gmm.fit(intensities.reshape(-1, 1))
+
+            means = gmm.means_.reshape(-1)
+            ordered_components = np.argsort(means)
+
+            black_component = int(ordered_components[0])
+            yellow_component = int(ordered_components[1])
+
+            posteriors = gmm.predict_proba(
+                intensities.reshape(-1, 1)
+            )
+
+            predicted_components = np.argmax(
+                posteriors,
+                axis=1,
+            )
+
+            black_mask = (
+                predicted_components == black_component
+            )
+
+            yellow_mask = (
+                predicted_components == yellow_component
+            )
+
+            threshold_grid = np.linspace(
+                float(intensities.min()),
+                float(intensities.max()),
+                10000,
+            )
+
+            threshold_posteriors = gmm.predict_proba(
+                threshold_grid.reshape(-1, 1)
+            )
+
+            threshold = float(
+                threshold_grid[
+                    np.argmin(
+                        np.abs(
+                            threshold_posteriors[:, black_component]
+                            - threshold_posteriors[:, yellow_component]
+                        )
+                    )
+                ]
+            )
+
+            print("\n--- Yellow / Black GMM ---")
+            print(
+                f"Black points: "
+                f"{np.sum(black_mask)} "
+                f"(mean={np.mean(intensities[black_mask]):.2f})"
+            )
+            print(
+                f"Yellow points: "
+                f"{np.sum(yellow_mask)} "
+                f"(mean={np.mean(intensities[yellow_mask]):.2f})"
+            )
+            print(
+                f"Yellow/black threshold: "
+                f"{threshold:.2f}"
+            )
+
+            return {
+                "gmm": gmm,
+                "black_mask": black_mask,
+                "yellow_mask": yellow_mask,
+                "threshold": threshold,
+            }
+
+        orange_split = fit_body_tape_gmm(
+            orange_intensities,
+            "orange",
+        )
+
+        blue_split = fit_body_tape_gmm(
+            blue_intensities,
+            "blue",
+        )
+
+        yellow_split = fit_yellow_black_gmm(
+            yellow_intensities,
+        )
+
+        orange_body_mask = orange_split["body_mask"]
+        orange_tape_mask = orange_split["tape_mask"]
+
+        blue_body_mask = blue_split["body_mask"]
+        blue_tape_mask = blue_split["tape_mask"]
+
+        yellow_body_mask = yellow_split["yellow_mask"]
+        yellow_black_mask = yellow_split["black_mask"]
+
+        orange_body_d = orange_distances[orange_body_mask]
+        orange_body_i = orange_intensities[orange_body_mask]
+
+        orange_tape_d = orange_distances[orange_tape_mask]
+        orange_tape_i = orange_intensities[orange_tape_mask]
+
+        blue_body_d = blue_distances[blue_body_mask]
+        blue_body_i = blue_intensities[blue_body_mask]
+
+        blue_tape_d = blue_distances[blue_tape_mask]
+        blue_tape_i = blue_intensities[blue_tape_mask]
+
+        yellow_body_d = yellow_distances[yellow_body_mask]
+        yellow_body_i = yellow_intensities[yellow_body_mask]
+
+        yellow_black_d = yellow_distances[yellow_black_mask]
+        yellow_black_i = yellow_intensities[yellow_black_mask]
+
+        white_tape_d = np.concatenate([
+            orange_tape_d,
+            blue_tape_d,
+        ])
+
+        white_tape_i = np.concatenate([
+            orange_tape_i,
+            blue_tape_i,
+        ])
+
+        def power_decay(
+            distance: np.ndarray,
+            scale: float,
+            exponent: float,
+        ) -> np.ndarray:
+            return scale * np.power(
+                np.maximum(distance, 1.0e-6),
+                -exponent,
+            )
+
+        def fit_decay(
+            distance: np.ndarray,
+            intensity: np.ndarray,
+            name: str,
+        ) -> np.ndarray:
+            valid = (
+                np.isfinite(distance)
+                & np.isfinite(intensity)
+                & (distance > 0.0)
+                & (intensity >= 0.0)
+            )
+
+            distance_valid = distance[valid]
+            intensity_valid = intensity[valid]
+
+            if len(distance_valid) < 6:
+                print(
+                    f"Warning: insufficient data for {name}; "
+                    "using exponent 0."
+                )
+
+                return np.array([
+                    max(float(np.mean(intensity_valid)), 1.0),
+                    0.0,
+                ])
+
+            try:
+                parameters, _ = curve_fit(
+                    power_decay,
+                    distance_valid,
+                    intensity_valid,
+                    p0=[
+                        max(float(np.mean(intensity_valid)), 1.0),
+                        0.5,
+                    ],
+                    bounds=(
+                        [0.0, 0.0],
+                        [10000.0, 5.0],
+                    ),
+                    maxfev=20000,
+                )
+
+                return parameters
+
+            except Exception as exception:
+                print(
+                    f"Warning: fit failed for {name}: "
+                    f"{exception}"
+                )
+
+                return np.array([
+                    max(float(np.mean(intensity_valid)), 1.0),
+                    0.0,
+                ])
+
+        fit_parameters = {
+            "Orange Body": fit_decay(
+                orange_body_d,
+                orange_body_i,
+                "orange body",
+            ),
+            "Blue Body": fit_decay(
+                blue_body_d,
+                blue_body_i,
+                "blue body",
+            ),
+            "White Tape": fit_decay(
+                white_tape_d,
+                white_tape_i,
+                "white tape",
+            ),
+            "Yellow Body": fit_decay(
+                yellow_body_d,
+                yellow_body_i,
+                "yellow body",
+            ),
+            "Yellow Black": fit_decay(
+                yellow_black_d,
+                yellow_black_i,
+                "yellow black regions",
+            ),
+        }
+
+        def normalize(
+            distance: np.ndarray,
+            intensity: np.ndarray,
+            fit_parameters: np.ndarray,
+        ) -> np.ndarray:
+            return np.clip(
+                intensity
+                * np.power(
+                    np.maximum(distance, 1.0e-6)
+                    / ref_distance,
+                    fit_parameters[1],
+                ),
+                0.0,
+                255.0,
+            )
+
+        orange_body_i_normalized = normalize(
+            orange_body_d,
+            orange_body_i,
+            fit_parameters["Orange Body"],
+        )
+
+        blue_body_i_normalized = normalize(
+            blue_body_d,
+            blue_body_i,
+            fit_parameters["Blue Body"],
+        )
+
+        white_tape_i_normalized = normalize(
+            white_tape_d,
+            white_tape_i,
+            fit_parameters["White Tape"],
+        )
+
+        yellow_body_i_normalized = normalize(
+            yellow_body_d,
+            yellow_body_i,
+            fit_parameters["Yellow Body"],
+        )
+
+        yellow_black_i_normalized = normalize(
+            yellow_black_d,
+            yellow_black_i,
+            fit_parameters["Yellow Black"],
+        )
+
+        max_distance = max(
+            25.0,
+            float(np.max(orange_body_d)),
+            float(np.max(blue_body_d)),
+            float(np.max(white_tape_d)),
+            float(np.max(yellow_body_d)),
+            float(np.max(yellow_black_d)),
+        )
+
+        distance_grid = np.linspace(
+            1.0,
+            max_distance,
+            200,
+        )
+
+        # Combined diagram: same stacked layout as the existing plot.
+        fig, axes = plt.subplots(
+            2,
+            1,
+            figsize=(14, 11),
+            sharex=True,
+        )
+
+        axes[0].scatter(
+            orange_body_d,
+            orange_body_i,
+            alpha=0.10,
+            color="tab:orange",
+            s=10,
+            label="Orange Body",
+        )
+
+        axes[0].scatter(
+            blue_body_d,
+            blue_body_i,
+            alpha=0.10,
+            color="tab:blue",
+            s=10,
+            label="Blue Body",
+        )
+
+        axes[0].scatter(
+            white_tape_d,
+            white_tape_i,
+            alpha=0.10,
+            color="gray",
+            s=10,
+            label="White Tape",
+        )
+
+        axes[0].scatter(
+            yellow_body_d,
+            yellow_body_i,
+            alpha=0.10,
+            color="gold",
+            s=10,
+            label="Yellow Body",
+        )
+
+        axes[0].scatter(
+            yellow_black_d,
+            yellow_black_i,
+            alpha=0.10,
+            color="black",
+            s=10,
+            label="Yellow Black Regions",
+        )
+
+        axes[0].plot(
+            distance_grid,
+            power_decay(
+                distance_grid,
+                *fit_parameters["Orange Body"],
+            ),
+            color="darkorange",
+            linewidth=2.5,
+            label="Orange Body Fit",
+        )
+
+        axes[0].plot(
+            distance_grid,
+            power_decay(
+                distance_grid,
+                *fit_parameters["Blue Body"],
+            ),
+            color="navy",
+            linewidth=2.5,
+            label="Blue Body Fit",
+        )
+
+        axes[0].plot(
+            distance_grid,
+            power_decay(
+                distance_grid,
+                *fit_parameters["White Tape"],
+            ),
+            color="dimgray",
+            linewidth=2.5,
+            linestyle="--",
+            label="White Tape Fit",
+        )
+
+        axes[0].plot(
+            distance_grid,
+            power_decay(
+                distance_grid,
+                *fit_parameters["Yellow Body"],
+            ),
+            color="darkgoldenrod",
+            linewidth=2.5,
+            label="Yellow Body Fit",
+        )
+
+        axes[0].plot(
+            distance_grid,
+            power_decay(
+                distance_grid,
+                *fit_parameters["Yellow Black"],
+            ),
+            color="black",
+            linewidth=2.5,
+            linestyle=":",
+            label="Yellow Black Fit",
+        )
+
+        axes[0].axhline(
+            orange_split["threshold"],
+            color="darkorange",
+            linestyle=":",
+            linewidth=1.5,
+            label=(
+                f"Orange threshold = "
+                f"{orange_split['threshold']:.1f}"
+            ),
+        )
+
+        axes[0].axhline(
+            blue_split["threshold"],
+            color="navy",
+            linestyle=":",
+            linewidth=1.5,
+            label=(
+                f"Blue threshold = "
+                f"{blue_split['threshold']:.1f}"
+            ),
+        )
+
+        axes[0].axhline(
+            yellow_split["threshold"],
+            color="red",
+            linestyle="--",
+            linewidth=1.8,
+            label=(
+                f"Yellow/black threshold = "
+                f"{yellow_split['threshold']:.1f}"
+            ),
+        )
+
+        axes[0].set_ylabel("Raw Intensity (0–255)")
+        axes[0].set_title(
+            "LiDAR Intensity Decay: "
+            "Orange, Blue, Yellow, White, and Black"
+        )
+        axes[0].legend(
+            loc="upper right",
+            ncol=2,
+            fontsize=9,
+        )
+
+        axes[1].scatter(
+            orange_body_d,
+            orange_body_i_normalized,
+            alpha=0.10,
+            color="tab:orange",
+            s=10,
+            label="Orange Body",
+        )
+
+        axes[1].scatter(
+            blue_body_d,
+            blue_body_i_normalized,
+            alpha=0.10,
+            color="tab:blue",
+            s=10,
+            label="Blue Body",
+        )
+
+        axes[1].scatter(
+            white_tape_d,
+            white_tape_i_normalized,
+            alpha=0.10,
+            color="gray",
+            s=10,
+            label="White Tape",
+        )
+
+        axes[1].scatter(
+            yellow_body_d,
+            yellow_body_i_normalized,
+            alpha=0.10,
+            color="gold",
+            s=10,
+            label="Yellow Body",
+        )
+
+        axes[1].scatter(
+            yellow_black_d,
+            yellow_black_i_normalized,
+            alpha=0.10,
+            color="black",
+            s=10,
+            label="Yellow Black Regions",
+        )
+
+        axes[1].axhline(
+            140.0,
+            color="red",
+            linestyle=":",
+            linewidth=2.0,
+            label="Reference threshold = 140",
+        )
+
+        axes[1].set_xlabel("Distance from LiDAR (m)")
+        axes[1].set_ylabel(
+            f"Normalized intensity at "
+            f"{ref_distance:.1f} m (0–255)"
+        )
+        axes[1].set_title(
+            "Distance-Normalized Intensity: All Cone Classes"
+        )
+        axes[1].legend(
+            loc="upper right",
+            ncol=2,
+            fontsize=9,
+        )
+
+        plt.tight_layout()
+
+        output_path = (
+            self.output_dir /
+            "combined_orange_blue_yellow_intensity.png"
+        )
+
+        fig.savefig(
+            output_path,
+            dpi=300,
+            bbox_inches="tight",
+        )
+
+        plt.close(fig)
+
+        print(
+            f"Saved combined diagram: {output_path}"
+        )
+
+        return {
+            "orange_body_distance": orange_body_d,
+            "orange_body_intensity": orange_body_i,
+            "blue_body_distance": blue_body_d,
+            "blue_body_intensity": blue_body_i,
+            "white_tape_distance": white_tape_d,
+            "white_tape_intensity": white_tape_i,
+            "yellow_body_distance": yellow_body_d,
+            "yellow_body_intensity": yellow_body_i,
+            "yellow_black_distance": yellow_black_d,
+            "yellow_black_intensity": yellow_black_i,
+            "fit_parameters": fit_parameters,
+            "orange_threshold": orange_split["threshold"],
+            "blue_threshold": blue_split["threshold"],
+            "yellow_black_threshold": yellow_split["threshold"],
+        }
+
+    def separate_yellow_black(
+        self,
+        records_color: List[Dict],
+        ref_distance: float = INTENSITY_REF_DISTANCE,
+    ):
+        """
+        Separate yellow cone body points from black points and create plots
+        matching the existing Orange-vs-White two-panel layout.
+
+        Left panel:
+            Raw intensity versus distance.
+
+        Right panel:
+            Distance-normalized intensity distributions.
+
+        Classification:
+            Lower-intensity GMM component  -> black.
+            Higher-intensity GMM component -> yellow body.
+        """
+        print("\n🟡 Separating yellow cone body from black regions...")
+
+        yellow_distances = []
+        yellow_intensities = []
+
+        for record in tqdm(
+            records_color,
+            desc="Collecting yellow-cone points",
+        ):
+            if record.get("color") != "yellow":
+                continue
+
+            pcd_path = record.get("pcd_path")
+
+            if pcd_path is None:
+                continue
+
+            pcd_path = Path(pcd_path)
+
+            if not pcd_path.exists():
+                continue
+
+            points = load_pcd_binary(pcd_path)
+
+            if points is None or len(points) < 3:
+                continue
+
+            distance = float(record["distance"])
+
+            intensities = np.clip(
+                points[:, 3].astype(np.float64),
+                0.0,
+                255.0,
+            )
+
+            yellow_distances.extend(
+                [distance] * len(intensities)
+            )
+            yellow_intensities.extend(intensities)
+
+        yellow_distances = np.asarray(
+            yellow_distances,
+            dtype=np.float64,
+        )
+
+        yellow_intensities = np.asarray(
+            yellow_intensities,
+            dtype=np.float64,
+        )
+
+        if yellow_intensities.size < 30:
+            raise RuntimeError(
+                "Not enough yellow-cone points for GMM separation."
+            )
+
+        # Two components only: black versus yellow.
+        gmm = GaussianMixture(
+            n_components=2,
+            covariance_type="full",
+            n_init=30,
+            max_iter=1000,
+            random_state=42,
+            reg_covar=1e-4,
+        )
+
+        gmm.fit(yellow_intensities.reshape(-1, 1))
+
+        means = gmm.means_.reshape(-1)
+        variances = gmm.covariances_.reshape(-1)
+        standard_deviations = np.sqrt(
+            np.maximum(variances, 1e-12)
+        )
+        weights = gmm.weights_.reshape(-1)
+
+        ordered_components = np.argsort(means)
+
+        black_component = int(ordered_components[0])
+        yellow_component = int(ordered_components[1])
+
+        posteriors = gmm.predict_proba(
+            yellow_intensities.reshape(-1, 1)
+        )
+
+        predicted_components = np.argmax(
+            posteriors,
+            axis=1,
+        )
+
+        black_mask = (
+            predicted_components == black_component
+        )
+
+        yellow_mask = (
+            predicted_components == yellow_component
+        )
+
+        black_distance = yellow_distances[black_mask]
+        black_intensity = yellow_intensities[black_mask]
+
+        yellow_distance = yellow_distances[yellow_mask]
+        yellow_intensity = yellow_intensities[yellow_mask]
+
+        # Find the equal-posterior GMM boundary.
+        threshold_grid = np.linspace(
+            float(yellow_intensities.min()),
+            float(yellow_intensities.max()),
+            10000,
+        )
+
+        threshold_posteriors = gmm.predict_proba(
+            threshold_grid.reshape(-1, 1)
+        )
+
+        separation_threshold = float(
+            threshold_grid[
+                np.argmin(
+                    np.abs(
+                        threshold_posteriors[:, black_component]
+                        - threshold_posteriors[:, yellow_component]
+                    )
+                )
+            ]
+        )
+
+        print("\n--- Yellow / Black GMM ---")
+        print(
+            f"Black component: "
+            f"mean={means[black_component]:.2f}, "
+            f"std={standard_deviations[black_component]:.2f}, "
+            f"weight={weights[black_component]:.3f}, "
+            f"points={len(black_intensity)}"
+        )
+        print(
+            f"Yellow component: "
+            f"mean={means[yellow_component]:.2f}, "
+            f"std={standard_deviations[yellow_component]:.2f}, "
+            f"weight={weights[yellow_component]:.3f}, "
+            f"points={len(yellow_intensity)}"
+        )
+        print(
+            f"Yellow/black GMM threshold: "
+            f"{separation_threshold:.2f}"
+        )
+
+        # Distance normalization.
+        #
+        # Fit separate power-law exponents to the two point classes:
+        #
+        #     I(d) = a * d^(-b)
+        #
+        # Then:
+        #
+        #     I(ref) = I(d) * (d / ref)^b
+        def power_decay(
+            distance: np.ndarray,
+            scale: float,
+            exponent: float,
+        ) -> np.ndarray:
+            return scale * np.power(
+                np.maximum(distance, 1e-6),
+                -exponent,
+            )
+
+        def fit_decay(
+            distance: np.ndarray,
+            intensity: np.ndarray,
+            name: str,
+        ) -> np.ndarray:
+            valid = (
+                np.isfinite(distance)
+                & np.isfinite(intensity)
+                & (distance > 0.0)
+                & (intensity >= 0.0)
+            )
+
+            distance_valid = distance[valid]
+            intensity_valid = intensity[valid]
+
+            if len(distance_valid) < 6:
+                print(
+                    f"Warning: insufficient points for {name} "
+                    "normalization fit; using exponent 0."
+                )
+                return np.array([
+                    max(float(np.mean(intensity_valid)), 1.0),
+                    0.0,
+                ])
+
+            try:
+                parameters, _ = curve_fit(
+                    power_decay,
+                    distance_valid,
+                    intensity_valid,
+                    p0=[
+                        max(float(np.mean(intensity_valid)), 1.0),
+                        0.5,
+                    ],
+                    bounds=(
+                        [0.0, 0.0],
+                        [10000.0, 5.0],
+                    ),
+                    maxfev=20000,
+                )
+
+                return parameters
+
+            except Exception as exception:
+                print(
+                    f"Warning: normalization fit failed for {name}: "
+                    f"{exception}"
+                )
+                return np.array([
+                    max(float(np.mean(intensity_valid)), 1.0),
+                    0.0,
+                ])
+
+        black_fit = fit_decay(
+            black_distance,
+            black_intensity,
+            "black",
+        )
+
+        yellow_fit = fit_decay(
+            yellow_distance,
+            yellow_intensity,
+            "yellow",
+        )
+
+        black_intensity_normalized = np.clip(
+            black_intensity
+            * np.power(
+                black_distance / ref_distance,
+                black_fit[1],
+            ),
+            0.0,
+            255.0,
+        )
+
+        yellow_intensity_normalized = np.clip(
+            yellow_intensity
+            * np.power(
+                yellow_distance / ref_distance,
+                yellow_fit[1],
+            ),
+            0.0,
+            255.0,
+        )
+
+        # ------------------------------------------------------------------
+        # Plot 1: exactly the requested raw-distance layout.
+        # ------------------------------------------------------------------
+        fig, axes = plt.subplots(
+            1,
+            2,
+            figsize=(14, 6),
+        )
+
+        axes[0].scatter(
+            yellow_distance,
+            yellow_intensity,
+            alpha=0.15,
+            color="gold",
+            s=12,
+            label="Yellow Cone Body",
+        )
+
+        axes[0].scatter(
+            black_distance,
+            black_intensity,
+            alpha=0.15,
+            color="black",
+            s=12,
+            label="Black Regions",
+        )
+
+        max_distance = max(
+            25.0,
+            float(np.max(yellow_distance)),
+            float(np.max(black_distance)),
+        )
+
+        distance_grid = np.linspace(
+            1.0,
+            max_distance,
+            200,
+        )
+
+        axes[0].plot(
+            distance_grid,
+            power_decay(
+                distance_grid,
+                *yellow_fit,
+            ),
+            color="darkgoldenrod",
+            linewidth=2.5,
+            label="Yellow Body Fit",
+        )
+
+        axes[0].plot(
+            distance_grid,
+            power_decay(
+                distance_grid,
+                *black_fit,
+            ),
+            color="dimgray",
+            linewidth=2.5,
+            linestyle="--",
+            label="Black Fit",
+        )
+
+        axes[0].axhline(
+            separation_threshold,
+            color="red",
+            linestyle="--",
+            linewidth=2.0,
+            label=(
+                f"Yellow/Black GMM Threshold = "
+                f"{separation_threshold:.1f}"
+            ),
+        )
+
+        axes[0].set_xlabel("Distance (m)")
+        axes[0].set_ylabel("Raw Intensity (0–255)")
+        axes[0].set_title(
+            "Yellow GMM: Yellow Body vs. Black Regions"
+        )
+        axes[0].legend()
+
+        # ------------------------------------------------------------------
+        # Plot 2: exactly the requested normalized distribution layout.
+        # ------------------------------------------------------------------
+        sns.kdeplot(
+            yellow_intensity_normalized,
+            ax=axes[1],
+            color="gold",
+            fill=True,
+            label="Yellow Body",
+        )
+
+        sns.kdeplot(
+            black_intensity_normalized,
+            ax=axes[1],
+            color="black",
+            fill=True,
+            label="Black Regions",
+        )
+
+        axes[1].axvline(
+            separation_threshold,
+            color="red",
+            linestyle="--",
+            linewidth=2.0,
+            label=(
+                f"Threshold = "
+                f"{separation_threshold:.1f}"
+            ),
+        )
+
+        axes[1].set_xlabel(
+            f"Normalized Intensity at "
+            f"{ref_distance:.1f} m (0–255)"
+        )
+        axes[1].set_ylabel("Density")
+        axes[1].set_title(
+            "Normalized Distribution: "
+            "Yellow Body vs. Black Regions"
+        )
+        axes[1].legend()
+
+        plt.tight_layout()
+
+        output_path = (
+            self.output_dir /
+            "yellow_vs_black_intensity.png"
+        )
+
+        plt.savefig(
+            output_path,
+            dpi=300,
+            bbox_inches="tight",
+        )
+
+        plt.close(fig)
+
+        print(f"Saved plot: {output_path}")
+
+        # Save the separated raw point intensities.
+        np.save(
+            self.output_dir / "yellow_body_intensities.npy",
+            yellow_intensity,
+        )
+
+        np.save(
+            self.output_dir / "black_intensities.npy",
+            black_intensity,
+        )
+
+        return {
+            "gmm": gmm,
+            "black_component": black_component,
+            "yellow_component": yellow_component,
+            "black_mask": black_mask,
+            "yellow_mask": yellow_mask,
+            "black_distance": black_distance,
+            "black_intensity": black_intensity,
+            "yellow_distance": yellow_distance,
+            "yellow_intensity": yellow_intensity,
+            "black_intensity_normalized": black_intensity_normalized,
+            "yellow_intensity_normalized": yellow_intensity_normalized,
+            "separation_threshold": separation_threshold,
+            "black_fit": black_fit,
+            "yellow_fit": yellow_fit,
+        }
 
     def fit_and_plot_intensity_decay(self, records: List[Dict[str, float]]) -> Dict[str, Dict]:
         print("\n⚡ Modeling Intensity Decay (via AIC)...")
@@ -2300,6 +2978,11 @@ def main():
     # Step 2: Color Dataset Collection
     records_color = analyzer.collect_labeled_color_pcds()
     if records_color:
+
+        analyzer.separate_yellow_black(
+                records_color,
+            ref_distance=INTENSITY_REF_DISTANCE)
+          
         # Step 3: Intensity Unmixing & Distribution Plots (White vs Orange vs Blue)
         analyzer.analyze_and_plot_cone_intensity_unmixing(records_color)
 

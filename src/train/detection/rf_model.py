@@ -50,7 +50,6 @@ class RandomForestConeDetector:
         print(f'\n🔍 {cv_folds}-Fold Cross-Validation (F1 scoring)...')
         rf_temp = RandomForestClassifier(
             **self.best_params,
-            class_weight='balanced',
             random_state=self.random_state,
             n_jobs=-1
         )
@@ -73,16 +72,17 @@ class RandomForestConeDetector:
         rf = RandomForestClassifier(random_state=self.random_state, class_weight='balanced')
 
         coarse_grid = {
-            'n_estimators': [100, 300, 500],
-            'max_depth': [10, 20, 30, None],
-            'min_samples_split': [2, 6, 12],
-            'min_samples_leaf': [1, 3, 6],
-            'max_features': ['sqrt', 'log2']
+            'n_estimators': [100, 200, 300, 400, 500],
+            'max_depth': [10, 15, 20, 25, 30, None],
+            'min_samples_split': [2, 5, 10, 15],
+            'min_samples_leaf': [1, 2, 4, 6, 8, 12],
+            'max_features': ['sqrt', 'log2'],
+            'class_weight': ['balanced', 'balanced_subsample']
         }
         
         print('\n🔍 Phase 1: Coarse search...')
         with Timer('GridSearch Phase 1'):
-            coarse_search = GridSearchCV(rf, coarse_grid, cv=5, scoring='f1', n_jobs=-1, verbose=2)
+            coarse_search = GridSearchCV(rf, coarse_grid, cv=5, scoring='f1', n_jobs=-1)#, verbose=2)
             coarse_search.fit(X_train, y_train)
 
         best_coarse = coarse_search.best_params_
@@ -98,12 +98,13 @@ class RandomForestConeDetector:
             'max_depth': [None, 25, 35] if c_depth is None else sorted(set([max(5, c_depth - 5), c_depth, c_depth + 5])),
             'min_samples_split': sorted(set([max(2, c_split - 2), c_split, c_split + 2])),
             'min_samples_leaf': sorted(set([max(1, c_leaf - 1), c_leaf, c_leaf + 1])),
-            'max_features': [best_coarse['max_features']]
+            'max_features': [best_coarse['max_features']],
+            'class_weight': ['balanced', 'balanced_subsample']
         }
 
         print('\n🔍 Phase 2: Medium refinement...')
         with Timer('GridSearch Phase 2'):
-            med_search = GridSearchCV(rf, med_grid, cv=5, scoring='f1', n_jobs=-1,  verbose=2)
+            med_search = GridSearchCV(rf, med_grid, cv=5, scoring='f1', n_jobs=-1)#,  verbose=2)
             med_search.fit(X_train, y_train)
 
         best_med = med_search.best_params_
@@ -119,12 +120,13 @@ class RandomForestConeDetector:
             'max_depth': [None] if m_depth is None else sorted(set([max(3, m_depth - 2), m_depth, m_depth + 2])),
             'min_samples_split': sorted(set([max(2, m_split - 1), m_split, m_split + 1])),
             'min_samples_leaf': sorted(set([max(1, m_leaf - 1), m_leaf, m_leaf + 1])),
-            'max_features': [best_med['max_features']]
+            'max_features': [best_med['max_features']],
+            'class_weight': ['balanced', 'balanced_subsample']
         }
 
         print('\n🔍 Phase 3: Fine tuning...')
         with Timer('GridSearch Phase 3'):
-            fine_search = GridSearchCV(rf, fine_grid, cv=5, scoring='f1', n_jobs=-1, verbose=2)
+            fine_search = GridSearchCV(rf, fine_grid, cv=5, scoring='f1', n_jobs=-1)#, verbose=2)
             fine_search.fit(X_train, y_train)
 
         print(f'\n✓ Progressive GridSearch Complete!')
