@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """Unified detection trainer: select a model and dispatch to its module."""
 
+
 import argparse
 import json
 import struct
 import time
+from itertools import combinations
 from pathlib import Path
+
 
 import numpy as np
 from sklearn.preprocessing import LabelEncoder
@@ -18,6 +21,7 @@ from pointnet_model import run_pointnet_pipeline
 from pointnet2_model import run_pointnet2_pipeline
 
 
+
 def find_project_root(start_path=None):
     current = Path(start_path or __file__).resolve()
     if current.is_file():
@@ -28,7 +32,9 @@ def find_project_root(start_path=None):
     return current
 
 
+
 REPO_ROOT = find_project_root()
+
 
 
 def load_pcd_binary(filepath):
@@ -41,23 +47,117 @@ def load_pcd_binary(filepath):
                 break
         payload = file.read()
 
+
     payload = payload[:len(payload) - len(payload) % 16]
     if not payload:
         return None
     return np.frombuffer(payload, dtype="<f4").reshape(-1, 4).copy()
 
 
+
+def grouped_train_test_split_best_effort(X, y, groups, test_size=0.2):
+    unique_groups = np.unique(groups)
+    if len(unique_groups) < 2:
+        raise ValueError("Need at least 2 groups for grouped train/test split.")
+
+
+    total_samples = len(X)
+    group_to_indices = {group: np.where(groups == group)[0] for group in unique_groups}
+
+
+    best = None
+    best_score = None
+
+
+    for group_count in range(1, len(unique_groups)):
+        for test_group_combo in combinations(unique_groups, group_count):
+            test_group_set = set(test_group_combo)
+            train_group_set = set(unique_groups) - test_group_set
+
+
+            if not train_group_set or not test_group_set:
+                continue
+
+
+            test_idx = np.concatenate([group_to_indices[group] for group in test_group_combo])
+            train_idx = np.concatenate([group_to_indices[group] for group in train_group_set])
+
+
+            if len(np.unique(y[train_idx])) < 2 or len(np.unique(y[test_idx])) < 2:
+                continue
+
+
+            actual_test_ratio = len(test_idx) / total_samples
+            ratio_error = abs(actual_test_ratio - test_size)
+
+
+            train_positive_ratio = float(y[train_idx].mean())
+            test_positive_ratio = float(y[test_idx].mean())
+            class_balance_error = abs(train_positive_ratio - test_positive_ratio)
+
+
+            score = (ratio_error, class_balance_error)
+
+
+            if best is None or score < best_score:
+                best = (
+                    train_idx,
+                    test_idx,
+                    actual_test_ratio,
+                    class_balance_error,
+                    train_group_set,
+                    test_group_set,
+                )
+                best_score = score
+
+
+    if best is None:
+        raise RuntimeError(
+            "Failed to create a valid group-disjoint split with both classes "
+            "present in train and test."
+        )
+
+
+    train_idx, test_idx, actual_test_ratio, class_balance_error, train_groups, test_groups = best
+
+
+    overlap = set(groups[train_idx]).intersection(groups[test_idx])
+    if overlap:
+        raise RuntimeError(
+            f"Data leakage detected: groups in both train and test: {overlap}"
+        )
+
+
+    print("\n[Grouped Train/Test Split]")
+    print(f"  Requested test ratio: {test_size:.2%}")
+    print(f"  Actual test ratio:    {actual_test_ratio:.2%}")
+    print(f"  Ratio error:          {abs(actual_test_ratio - test_size):.2%}")
+    print(f"  Train samples:        {len(train_idx)}")
+    print(f"  Test samples:         {len(test_idx)}")
+    print(f"  Train groups:         {len(train_groups)}")
+    print(f"  Test groups:          {len(test_groups)}")
+    print(f"  Class balance delta:  {class_balance_error:.4f}")
+    print("  ✓ Group overlap:      0 (a run cannot be split)")
+
+
+    return train_idx, test_idx
+
+
+
 class MultiTrackDatasetBuilder:
     """Builds one dataset from exactly the folder passed with --dataset."""
+
 
     def __init__(self, base_dataset_path, split_group_level="parent"):
         self.base_path = Path(base_dataset_path).expanduser().resolve()
         if not self.base_path.is_dir():
             raise FileNotFoundError(f"Dataset folder does not exist: {self.base_path}")
 
+
         self.split_group_level = split_group_level
         self.tracks = {}
         self._discover_tracks()
+
 
     def _discover_tracks(self):
         for labels_path in self.base_path.rglob("labeled_clusters.json"):
@@ -71,16 +171,19 @@ class MultiTrackDatasetBuilder:
             }
             print(f"✓ Found {track_name}: {len(labels)} labels")
 
+
         if not self.tracks:
             raise FileNotFoundError(
                 f"No labeled_clusters.json files found below {self.base_path}"
             )
 
+
     def _make_group_id(self, track_name, filename):
         if self.split_group_level == "track":
             return track_name
         parent = Path(filename).parent
-        return f"{track_name}::{parent.as_posix() if str(parent) != '.' else '__root__'}"
+        return f"{track_name}::{parent.as_posix() if str(parent) != "." else "__root__"}"
+
 
     @staticmethod
     def _is_cone(label):
@@ -91,6 +194,7 @@ class MultiTrackDatasetBuilder:
         return str(label).lower().strip().replace("_", "-") in {
             "cone", "1", "true", "yes",
         }
+
 
     def _resolve_pcd(self, track_path, filename):
         filename_path = Path(filename)
@@ -105,10 +209,15 @@ class MultiTrackDatasetBuilder:
         matches = list(self.base_path.rglob(filename_path.name))
         return matches[0] if matches else None
 
+
     def build_raw_dataset(self):
-        data, labels = [], []
+        data, labels, groups = [], [], []
+
+
+
         total_labels = sum(len(track["labels"]) for track in self.tracks.values())
         progress = tqdm(total=total_labels, desc="Processing clusters")
+
 
         for track_name, track_data in self.tracks.items():
             for filename, label in track_data["labels"].items():
@@ -116,56 +225,93 @@ class MultiTrackDatasetBuilder:
                     pcd_path = self._resolve_pcd(track_data["path"], filename)
                     if pcd_path is None:
                         continue
+
+
                     points = load_pcd_binary(pcd_path)
                     if points is None or len(points) < 3:
                         continue
+
+
                     data.append(points)
                     labels.append(int(self._is_cone(label)))
+                    groups.append(self._make_group_id(track_name, filename))
                 finally:
                     progress.update(1)
 
+
         progress.close()
+
+
         if not data:
             raise RuntimeError(f"No usable samples found below {self.base_path}")
-        return data, np.asarray(labels, dtype=np.int64)
+
+
+
+        return data, np.asarray(labels, dtype=np.int64), np.asarray(groups)
+
+
 
     def build_feature_dataset(self):
-        raw_clouds, labels = self.build_raw_dataset()
+        raw_clouds, labels, groups = self.build_raw_dataset()
+
+
+
         features = [extract_features(points) for points in raw_clouds]
-        valid = [feature is not None for feature in features]
+        valid = np.asarray([feature is not None for feature in features], dtype=bool)
+
+
         return (
             np.asarray([feature for feature in features if feature is not None], dtype=np.float32),
-            labels[np.asarray(valid)],
+            labels[valid],
+            groups[valid],
         )
+
+
 
     def build_color_dataset(self):
         """Builds raw clouds and string labels for PointNet++ color models."""
-        data, labels = [], []
+        data, labels, groups = [], [], []
+
+
+
         total_labels = sum(len(track["labels"]) for track in self.tracks.values())
         progress = tqdm(total=total_labels, desc="Processing clusters")
 
-        for track_data in self.tracks.values():
+
+
+        for track_name, track_data in self.tracks.items():
             for filename, label_data in track_data["labels"].items():
                 try:
                     pcd_path = self._resolve_pcd(track_data["path"], filename)
                     if pcd_path is None:
                         continue
+
+
+
                     points = load_pcd_binary(pcd_path)
                     if points is None or len(points) < 3:
                         continue
+
+
+
                     label = label_data.get("color", "") if isinstance(label_data, dict) else label_data
                     label = str(label).lower().strip()
                     if label:
                         data.append(points)
                         labels.append(label)
+                        groups.append(self._make_group_id(track_name, filename))
                 finally:
                     progress.update(1)
+
+
 
         progress.close()
         if not data:
             raise RuntimeError(f"No usable color samples found below {self.base_path}")
         encoder = LabelEncoder()
-        return data, encoder.fit_transform(labels), encoder
+        return data, encoder.fit_transform(labels), np.asarray(groups), encoder
+
+
 
 
 def main():
@@ -174,29 +320,90 @@ def main():
     parser.add_argument("--model", choices=["rf", "xgb", "pointnet", "pointnet2"], required=True)
     parser.add_argument("--epochs", type=int, default=150)
     parser.add_argument("--no-gridsearch", action="store_true")
+    parser.add_argument("--test-size", type=float, default=0.2)
+    parser.add_argument("--split-group-level", choices=["parent", "track"], default="track")
     args = parser.parse_args()
+
+
 
     dataset = Path(args.dataset).expanduser()
     if not dataset.is_absolute():
         dataset = REPO_ROOT / dataset
 
-    builder = MultiTrackDatasetBuilder(dataset)
+
+
+    builder = MultiTrackDatasetBuilder(dataset, split_group_level=args.split_group_level)
     start = time.perf_counter()
 
+
+
     if args.model == "rf":
-        X, y = builder.build_feature_dataset()
-        run_rf_pipeline(X, y, REPO_ROOT, use_gridsearch=not args.no_gridsearch)
+        X, y, groups = builder.build_feature_dataset()
     elif args.model == "xgb":
-        X, y = builder.build_feature_dataset()
-        run_xgb_pipeline(X, y, REPO_ROOT, use_gridsearch=not args.no_gridsearch)
+        X, y, groups = builder.build_feature_dataset()
     elif args.model == "pointnet":
-        clouds, y = builder.build_raw_dataset()
-        run_pointnet_pipeline(clouds, y, None, REPO_ROOT, epochs=args.epochs)
+        X, y, groups = builder.build_raw_dataset()
     elif args.model == "pointnet2":
-        clouds, y = builder.build_raw_dataset()
-        run_pointnet2_pipeline(clouds, y, None, REPO_ROOT, epochs=args.epochs)
+        clouds, y, groups = builder.build_raw_dataset()
+        X = clouds
+
+
+
+    train_idx, test_idx = grouped_train_test_split_best_effort(
+        X,
+        y,
+        groups,
+        test_size=args.test_size,
+    )
+
+
+
+    if args.model == "rf":
+        run_rf_pipeline(
+            X,
+            y,
+            groups,
+            REPO_ROOT,
+            use_gridsearch=not args.no_gridsearch,
+            train_idx=train_idx,
+            test_idx=test_idx,
+        )
+    elif args.model == "xgb":
+        run_xgb_pipeline(
+            X,
+            y,
+            groups,
+            REPO_ROOT,
+            use_gridsearch=not args.no_gridsearch,
+            train_idx=train_idx,
+            test_idx=test_idx,
+        )
+    elif args.model == "pointnet":
+        run_pointnet_pipeline(
+            X,
+            y,
+            groups,
+            REPO_ROOT,
+            epochs=args.epochs,
+            train_idx=train_idx,
+            test_idx=test_idx,
+        )
+    elif args.model == "pointnet2":
+        run_pointnet2_pipeline(
+            X,
+            y,
+            groups,
+            REPO_ROOT,
+            epochs=args.epochs,
+            train_idx=train_idx,
+            test_idx=test_idx,
+        )
+
+
 
     print(f"\nExecution time: {time.perf_counter() - start:.2f} seconds")
+
+
 
 
 if __name__ == "__main__":
