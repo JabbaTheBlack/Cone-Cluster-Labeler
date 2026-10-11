@@ -12,7 +12,7 @@ from math import prod
 
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import train_test_split, GridSearchCV, cross_validate
+from sklearn.model_selection import GroupKFold, train_test_split, GridSearchCV, cross_validate
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
 from features import FEATURE_NAMES
 
@@ -131,6 +131,8 @@ class RandomForestConeDetector:
         global_best_estimator = None
         global_best_phase = None
 
+        group_cv = GroupKFold(n_splits=5)
+
         def evaluate_phase(search, phase_name, grid):
             nonlocal global_best_score
             nonlocal global_best_params
@@ -145,6 +147,7 @@ class RandomForestConeDetector:
                 f'({n_combinations} candidates, {total_fits} total fits)'
             )
 
+            # NOTE: Pass `groups` when fitting if you are using GroupKFold
             with Timer(f'GridSearch {phase_name}'):
                 search.fit(X_train, y_train)
 
@@ -179,10 +182,10 @@ class RandomForestConeDetector:
         # Phase 1: Coarse Search
         # ==========================================
         coarse_grid = {
-            'n_estimators': [300, 500, 600, 700],
+            'n_estimators': [100, 200, 300, 400],
             'max_depth': [10, 20, 30, None],
-            'min_samples_split': [2, 6, 12],
-            'min_samples_leaf': [1, 3, 6],
+            'min_samples_split': [8, 12, 16, 20],
+            'min_samples_leaf': [4, 6, 8, 12, 16],
             'max_features': ['sqrt', 'log2']
         }
 
@@ -214,49 +217,43 @@ class RandomForestConeDetector:
         c_leaf = best_coarse['min_samples_leaf']
         c_features = best_coarse['max_features']
 
-        if c_depth is None:
-            medium_depths = [None, 25, 35, 45]
-        else:
-            medium_depths = sorted({
-                max(5, c_depth - 10),
-                max(5, c_depth - 5),
-                c_depth,
-                c_depth + 5,
-                c_depth + 10
-            })
+        medium_depths = [None] if c_depth is None else sorted({
+            max(4, c_depth - 4),
+            max(4, c_depth - 2),
+            c_depth,
+            min(18, c_depth + 2),
+            min(18, c_depth + 4)
+        })
 
         medium_estimators = sorted({
-            max(50, c_nest - 100),
-            max(50, c_nest - 60),
-            max(50, c_nest - 20),
+            max(50, c_nest - 50),
             c_nest,
-            c_nest + 20,
-            c_nest + 60,
+            c_nest + 50,
             c_nest + 100
         })
 
         medium_split = sorted({
-            max(2, c_split - 4),
-            max(2, c_split - 2),
+            max(6, c_split - 4),
+            max(6, c_split - 2),
             c_split,
             c_split + 2,
             c_split + 4
         })
 
         medium_leaf = sorted({
-            max(1, c_leaf - 2),
-            max(1, c_leaf - 1),
+            max(4, c_leaf - 2),
+            max(4, c_leaf - 1),
             c_leaf,
             c_leaf + 1,
             c_leaf + 2
         })
 
         medium_grid = {
-            'n_estimators': medium_estimators,
-            'max_depth': medium_depths,
-            'min_samples_split': medium_split,
-            'min_samples_leaf': medium_leaf,
-            'max_features': [c_features]
+           'n_estimators': medium_estimators,
+           'max_depth': medium_depths,
+           'min_samples_split': medium_split,
+           'min_samples_leaf': medium_leaf,
+           'max_features': [c_features]
         }
 
         medium_search = GridSearchCV(
@@ -317,8 +314,8 @@ class RandomForestConeDetector:
         })
 
         fine_leaf = sorted({
-            max(1, m_leaf - 2),
-            max(1, m_leaf - 1),
+            max(4, m_leaf - 2),
+            max(4, m_leaf - 1),
             m_leaf,
             m_leaf + 1,
             m_leaf + 2
@@ -626,7 +623,7 @@ def run_rf_pipeline(
     label_encoder,
     repo_root,
     use_gridsearch=True,
-    binary_yellow=True,
+    binary_yellow=False,
     train_idx=None,
     test_idx=None,
 ):

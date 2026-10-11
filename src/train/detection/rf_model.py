@@ -92,6 +92,8 @@ class RandomForestConeDetector:
             global_best_params = None
             global_best_estimator = None
             global_best_phase = None
+
+            group_cv = GroupKFold(n_splits=5)
     
             def evaluate_phase(search, phase_name, grid):
                 nonlocal global_best_score
@@ -108,7 +110,7 @@ class RandomForestConeDetector:
                 )
     
                 with Timer(f'GridSearch {phase_name}'):
-                    search.fit(X_train, y_train)
+                    search.fit(X_train, y_train, groups=groups_train)
     
                 phase_score = float(search.best_score_)
                 phase_params = search.best_params_
@@ -141,17 +143,18 @@ class RandomForestConeDetector:
             # Phase 1: Coarse Search
             # ==========================================
             coarse_grid = {
-                'n_estimators': [50, 100, 200, 300, 500, 600, 700],
+                'n_estimators': [100, 200, 300, 400],
                 'max_depth': [10, 20, 30, None],
-                'min_samples_split': [2, 6, 12],
-                'min_samples_leaf': [1, 3, 6],
+                'min_samples_split': [8, 12, 16, 20],
+                'min_samples_leaf': [4, 6, 8, 12, 16],
                 'max_features': ['sqrt', 'log2']
             }
+
     
             coarse_search = GridSearchCV(
                 estimator=rf,
                 param_grid=coarse_grid,
-                cv=5,
+                cv=group_cv,
                 scoring='f1_macro',
                 n_jobs=-1,
                 refit=True,
@@ -176,38 +179,34 @@ class RandomForestConeDetector:
             c_leaf = best_coarse['min_samples_leaf']
             c_features = best_coarse['max_features']
     
-            if c_depth is None:
-                medium_depths = [None, 25, 35, 45]
-            else:
-                medium_depths = sorted({
-                    max(5, c_depth - 10),
-                    max(5, c_depth - 5),
-                    c_depth,
-                    c_depth + 5,
-                    c_depth + 10
-                })
-    
+            medium_depths = sorted({
+                max(4, c_depth - 4),
+                max(4, c_depth - 2),
+                c_depth,
+                min(18, c_depth + 2),
+                min(18, c_depth + 4)
+            })
+
             medium_estimators = sorted({
-                max(50, c_nest - 100),
-                max(50, c_nest - 60),
-                max(50, c_nest - 20),
+                max(50, c_nest - 50),
                 c_nest,
-                c_nest + 20,
-                c_nest + 60,
+                c_nest + 50,
                 c_nest + 100
             })
-    
+
+            # Enforce minimum split bound (>= 6)
             medium_split = sorted({
-                max(2, c_split - 4),
-                max(2, c_split - 2),
+                max(6, c_split - 4),
+                max(6, c_split - 2),
                 c_split,
                 c_split + 2,
                 c_split + 4
             })
-    
+
+            # Enforce minimum leaf bound (>= 3)
             medium_leaf = sorted({
-                max(1, c_leaf - 2),
-                max(1, c_leaf - 1),
+                max(4, c_leaf - 2),
+                max(4, c_leaf - 1),
                 c_leaf,
                 c_leaf + 1,
                 c_leaf + 2
@@ -224,7 +223,7 @@ class RandomForestConeDetector:
             medium_search = GridSearchCV(
                 estimator=rf,
                 param_grid=medium_grid,
-                cv=5,
+                cv=group_cv,
                 scoring='f1_macro',
                 n_jobs=-1,
                 refit=True,
@@ -279,8 +278,8 @@ class RandomForestConeDetector:
             })
     
             fine_leaf = sorted({
-                max(1, m_leaf - 2),
-                max(1, m_leaf - 1),
+                max(4, m_leaf - 2),
+                max(4, m_leaf - 1),
                 m_leaf,
                 m_leaf + 1,
                 m_leaf + 2
@@ -297,7 +296,7 @@ class RandomForestConeDetector:
             fine_search = GridSearchCV(
                 estimator=rf,
                 param_grid=fine_grid,
-                cv=5,
+                cv=group_cv,
                 scoring='f1_macro',
                 n_jobs=-1,
                 refit=True,

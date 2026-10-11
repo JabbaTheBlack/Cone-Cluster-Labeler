@@ -185,6 +185,7 @@ class MultiTrackDatasetBuilder:
         self,
         extract_feats=True,
         feature_extractor=extract_extended_features,
+        multiclass=False,
     ):
         VALID_COLORS = {'orange', 'blue', 'yellow'}
         label_encoder = LabelEncoder()
@@ -198,6 +199,8 @@ class MultiTrackDatasetBuilder:
             color = str(color).lower().strip()
             if color not in VALID_COLORS:
                 return None
+            if multiclass:
+                return color
             return 'yellow' if color == 'yellow' else 'non-yellow'
 
 
@@ -263,6 +266,8 @@ def main():
     parser.add_argument("--dataset", type=str, required=True, help="Path to Dataset folder")
     parser.add_argument("--model", type=str, choices=['rf', 'xgb', 'pointnet', 'pointnet2', 'svm'], default='rf', help="Model modality")
     parser.add_argument("--test-size", type=float, default=0.2, help="Requested test ratio using whole parent/run groups")
+    parser.add_argument("--multiclass", action='store_true', help="Use multiclass classification")
+
     args = parser.parse_args()
 
 
@@ -297,10 +302,10 @@ def main():
         )
 
     elif args.model == "pointnet":
-        X, y, groups, label_encoder = builder.build_dataset(extract_feats=False)
+        X, y, groups, label_encoder = builder.build_dataset(extract_feats=False, multiclass=args.multiclass)
 
     elif args.model == "pointnet2":
-        X, y, groups, label_encoder = builder.build_dataset(extract_feats=False)
+        X, y, groups, label_encoder = builder.build_dataset(extract_feats=False, multiclass=args.multiclass)
 
 
     train_idx, test_idx = grouped_train_test_split_best_effort(

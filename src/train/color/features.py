@@ -1,14 +1,51 @@
 import numpy as np
 import pandas as pd
 
+# FEATURE_NAMES = [
+#     'norm_avg_i'
+# ]
+
+# def extract_extended_features(points, eta=2.0, r_ref=14.0):
+#     """
+#     Extracts enhanced 17-feature representation from point cloud clusters.
+#     Expects points array with shape (N, 4+) -> [X, Y, Z, Intensity (0-255)].
+#     """
+#     if points is None or len(points) < 3:
+#         return None
+
+#     xyz = points[:, :3]
+#     raw_intensity = points[:, 3]
+#     z = xyz[:, 2]
+
+#     num_points = float(len(points))
+#     distance = float(np.linalg.norm(xyz.mean(axis=0)))
+    
+#     # 1. Physical Range Compensation for Intensity (0.0 to 1.0 scale)
+#     i_normalized = np.clip(raw_intensity / 255.0, 0.0, 1.0)
+#     range_factor = (max(distance, 0.5) / r_ref) ** eta
+#     intensity = i_normalized * range_factor
+
+#     # 2. Geometric Features with Clipping Boundaries
+#     height = float(z.max() - z.min())
+#     width = float(max(xyz[:, 0].std(), xyz[:, 1].std(), 1e-3))
+#     aspect_ratio = float(np.clip(height / width, 0.0, 20.0))
+
+#     avg_i = float(intensity.mean())
+
+#     norm_avg_i = float(np.log1p(avg_i))
+
+#     return np.array([
+#         norm_avg_i
+#     ], dtype=np.float32)
+
 FEATURE_NAMES = [
-    'norm_avg_i', 'norm_std_i', 'v_grad', 'height', 'aspect_ratio',
+    'norm_avg_i', 'norm_std_i', 'v_grad', 'aspect_ratio',
     'contrast', 'reflective_point_pct', 'contrast_bot_mid',
     'contrast_mid_top', 'contrast_bot_top', 'distance', 'num_points',
     'skew_i', 'q10', 'q50', 'q90', 'reflectivity_ratio'
 ]
 
-def extract_extended_features(points, eta=2.0, r_ref=10.0):
+def extract_extended_features(points, eta=2.0, r_ref=14.0):
     """
     Extracts enhanced 17-feature representation from point cloud clusters.
     Expects points array with shape (N, 4+) -> [X, Y, Z, Intensity (0-255)].
@@ -73,7 +110,7 @@ def extract_extended_features(points, eta=2.0, r_ref=10.0):
     reflectivity_ratio = float(avg_i / (float(i_normalized.mean()) + 1e-4))
 
     return np.array([
-        norm_avg_i, norm_std_i, v_grad, height, aspect_ratio,
+        norm_avg_i, norm_std_i, v_grad, aspect_ratio,
         contrast, reflective_point_pct, contrast_bot_mid,
         contrast_mid_top, contrast_bot_top, distance, num_points,
         skew_i, q10, q50, q90, reflectivity_ratio
