@@ -1,0 +1,25 @@
+{
+ "val_tracks": [
+  "Color/Autox/Ekol_09_04_16",
+  "Detection/Autocross/AutoX_7"
+ ],
+ "chosen_threshold": 0.53,
+ "test_at_0.5": {
+  "threshold": 0.5,
+  "f1": 0.9634809634809635,
+  "f1_macro": 0.8937255004670734,
+  "noncone_recall": 0.7142857142857143,
+  "noncone_precision": 0.9734513274336283,
+  "false_cones": 88,
+  "missed_cones": 6
+ },
+ "test_at_chosen": {
+  "threshold": 0.53,
+  "f1": 0.9668098399062867,
+  "f1_macro": 0.9057083934449166,
+  "noncone_recall": 0.75,
+  "noncone_precision": 0.9665271966527197,
+  "false_cones": 77,
+  "missed_cones": 8
+ }
+}

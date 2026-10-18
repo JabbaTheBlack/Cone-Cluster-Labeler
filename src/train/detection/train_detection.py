@@ -360,6 +360,15 @@ def main():
         help="Comma-separated test tracks (folder name or path relative to --dataset), or a preset name "
              f"({', '.join(SPLIT_PRESETS)}); replaces the automatic grouped split. Requires --split-group-level track",
     )
+    parser.add_argument("--arch", choices=["modified", "paper"], default="modified",
+                        help="PointNet only: this repo's modified architecture or the one from Qi et al. 2017")
+    parser.add_argument("--no-intensity", action="store_true", help="PointNet only: use x, y, z without the intensity channel")
+    parser.add_argument("--seed", type=int, default=42, help="PointNet only: random seed")
+    parser.add_argument(
+        "--no-validation",
+        action="store_true",
+        help="PointNet only: train on all training tracks for exactly --epochs epochs (no early stopping)",
+    )
     parser.add_argument(
         "--output-name",
         help="Output folder under logs/figures/models/detection (default depends on --model/--features)",
@@ -460,6 +469,13 @@ def main():
             epochs=args.epochs,
             train_idx=train_idx,
             test_idx=test_idx,
+            output_name=args.output_name or "pointnet",
+            use_validation=not args.no_validation,
+            use_intensity=not args.no_intensity,
+            random_state=args.seed,
+            arch=args.arch,
+            # The paper's training recipe: cross-entropy, lr halved every 20 epochs, 0.001 regulariser
+            **({"loss": "ce", "lr_step": 20, "reg_weight": 0.001} if args.arch == "paper" else {}),
         )
     elif args.model == "pointnet2":
         # Imported lazily so the tree models run without torch installed
