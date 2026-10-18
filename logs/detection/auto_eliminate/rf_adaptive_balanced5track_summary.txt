@@ -1,0 +1,2 @@
+RF 9    F1 0.9600 macro 0.8883 ncR 0.7370 ncP 0.9153 cm [[227, 81], [21, 1225]] gs 0.7185 1020s | lowest [('intensity_mean', 1.12), ('intensity_std', 2.33), ('volume', 2.44), ('depth', 4.2)] | drop ['intensity_mean']
+RF 8    F1 0.9593 macro 0.8858 ncR 0.7305 ncP 0.9146 cm [[225, 83], [21, 1225]] gs 0.7210 1427s | lowest [('intensity_std', 4.13), ('height', 5.08), ('volume', 5.31), ('depth', 7.63)] | drop []

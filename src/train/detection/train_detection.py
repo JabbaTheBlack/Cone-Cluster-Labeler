@@ -14,11 +14,9 @@ import numpy as np
 from sklearn.preprocessing import LabelEncoder
 from tqdm import tqdm
 
-from features import extract_features
+from features import extract_features, extract_extended_features, EXTENDED_FEATURE_NAMES
 from rf_model import run_rf_pipeline
 from xgb_model import run_xgb_pipeline
-from pointnet_model import run_pointnet_pipeline
-from pointnet2_model import run_pointnet2_pipeline
 
 
 
@@ -144,6 +142,36 @@ def grouped_train_test_split_best_effort(X, y, groups, test_size=0.2):
 
 
 
+# Named hand-picked test-track sets for --test-tracks
+SPLIT_PRESETS = {
+    # 5 held-out tracks, 23% of the samples, non-cone ratio matches train (19.8% vs 19.7%)
+    "balanced5track": ["Ekol_09_04_15", "fireup_11_28_22", "fireup_11_28_25", "Acceleration", "AutoX_7_2"],
+}
+
+
+
+def fixed_track_split(groups, y, test_tracks):
+    """Train/test split with a hand-picked set of test tracks (group ids at track level)."""
+    unique_groups = np.unique(groups)
+    selected = set()
+    for track in (name.strip() for name in test_tracks if name.strip()):
+        matches = [g for g in unique_groups if g == track or Path(g).name == track]
+        if len(matches) != 1:
+            raise ValueError(f"Test track {track!r} matches {len(matches)} groups: {matches}")
+        selected.add(matches[0])
+
+    is_test = np.isin(groups, list(selected))
+    train_idx, test_idx = np.where(~is_test)[0], np.where(is_test)[0]
+
+    print("\n[Fixed Track Train/Test Split]")
+    print(f"  Test tracks:          {sorted(selected)}")
+    print(f"  Test ratio:           {len(test_idx) / len(y):.2%}")
+    print(f"  Train samples:        {len(train_idx)} (non-cone {1 - y[train_idx].mean():.2%})")
+    print(f"  Test samples:         {len(test_idx)} (non-cone {1 - y[test_idx].mean():.2%})")
+    return train_idx, test_idx
+
+
+
 class MultiTrackDatasetBuilder:
     """Builds one dataset from exactly the folder passed with --dataset."""
 
@@ -251,12 +279,12 @@ class MultiTrackDatasetBuilder:
 
 
 
-    def build_feature_dataset(self):
+    def build_feature_dataset(self, extractor=extract_features):
         raw_clouds, labels, groups = self.build_raw_dataset()
 
 
 
-        features = [extract_features(points) for points in raw_clouds]
+        features = [extractor(points) for points in raw_clouds]
         valid = np.asarray([feature is not None for feature in features], dtype=bool)
 
 
@@ -322,7 +350,32 @@ def main():
     parser.add_argument("--no-gridsearch", action="store_true")
     parser.add_argument("--test-size", type=float, default=0.2)
     parser.add_argument("--split-group-level", choices=["parent", "track"], default="track")
+    parser.add_argument(
+        "--features",
+        help=f"RF/XGB only: comma-separated subset of {','.join(EXTENDED_FEATURE_NAMES)}; "
+             "outputs go to <rf|xgb>_feature_selection/<N>_features",
+    )
+    parser.add_argument(
+        "--test-tracks",
+        help="Comma-separated test tracks (folder name or path relative to --dataset), or a preset name "
+             f"({', '.join(SPLIT_PRESETS)}); replaces the automatic grouped split. Requires --split-group-level track",
+    )
+    parser.add_argument(
+        "--output-name",
+        help="Output folder under logs/figures/models/detection (default depends on --model/--features)",
+    )
     args = parser.parse_args()
+    if args.test_tracks and args.split_group_level != "track":
+        parser.error("--test-tracks requires --split-group-level track")
+
+    feature_names = None
+    if args.features:
+        if args.model not in ("rf", "xgb"):
+            parser.error("--features is only supported with --model rf or xgb")
+        feature_names = [name.strip() for name in args.features.split(",") if name.strip()]
+        unknown = sorted(set(feature_names) - set(EXTENDED_FEATURE_NAMES))
+        if unknown:
+            parser.error(f"Unknown features: {unknown}")
 
 
 
@@ -337,7 +390,10 @@ def main():
 
 
 
-    if args.model == "rf":
+    if args.model in ("rf", "xgb") and feature_names:
+        X, y, groups = builder.build_feature_dataset(extract_extended_features)
+        X = X[:, [EXTENDED_FEATURE_NAMES.index(name) for name in feature_names]]
+    elif args.model == "rf":
         X, y, groups = builder.build_feature_dataset()
     elif args.model == "xgb":
         X, y, groups = builder.build_feature_dataset()
@@ -349,12 +405,23 @@ def main():
 
 
 
-    train_idx, test_idx = grouped_train_test_split_best_effort(
-        X,
-        y,
-        groups,
-        test_size=args.test_size,
-    )
+    if args.test_tracks:
+        test_tracks = SPLIT_PRESETS.get(args.test_tracks) or args.test_tracks.split(",")
+        train_idx, test_idx = fixed_track_split(groups, y, test_tracks)
+    else:
+        train_idx, test_idx = grouped_train_test_split_best_effort(
+            X,
+            y,
+            groups,
+            test_size=args.test_size,
+        )
+
+    default_root = {"rf": "rf_feature_selection", "xgb": "xgb_feature_selection"}.get(args.model)
+    output_root = args.output_name or default_root
+    if feature_names:
+        output_name = f"{output_root}/{len(feature_names)}_features"
+    else:
+        output_name = args.output_name or {"rf": "random_forest", "xgb": "xgboost"}.get(args.model)
 
 
 
@@ -367,6 +434,8 @@ def main():
             use_gridsearch=not args.no_gridsearch,
             train_idx=train_idx,
             test_idx=test_idx,
+            feature_names=feature_names,
+            output_name=output_name,
         )
     elif args.model == "xgb":
         run_xgb_pipeline(
@@ -377,8 +446,12 @@ def main():
             use_gridsearch=not args.no_gridsearch,
             train_idx=train_idx,
             test_idx=test_idx,
+            feature_names=feature_names,
+            output_name=output_name,
         )
     elif args.model == "pointnet":
+        # Imported lazily so the tree models run without torch installed
+        from pointnet_model import run_pointnet_pipeline
         run_pointnet_pipeline(
             X,
             y,
@@ -389,6 +462,8 @@ def main():
             test_idx=test_idx,
         )
     elif args.model == "pointnet2":
+        # Imported lazily so the tree models run without torch installed
+        from pointnet2_model import run_pointnet2_pipeline
         run_pointnet2_pipeline(
             X,
             y,

@@ -2,6 +2,7 @@
 import json
 import time
 import pickle
+from math import prod
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -51,13 +52,15 @@ class TrainingLogger:
 
 
 class XGBoostConeDetector:
-    def __init__(self, repo_root, random_state=42):
+    def __init__(self, repo_root, random_state=42, feature_names=None, output_name="xgboost"):
         self.repo_root = Path(repo_root)
         self.random_state = random_state
         self.scaler = StandardScaler()
         self.model = None
         self.best_params = None
-        self.feature_names = FEATURE_NAMES
+        self.feature_names = list(feature_names) if feature_names is not None else FEATURE_NAMES
+        # Subfolder under logs/detection and figures/detection
+        self.output_name = output_name
 
 
 
@@ -100,190 +103,127 @@ class XGBoostConeDetector:
 
     def gridsearch(self, X_train, y_train, groups_train):
         scale_pos_weight = (len(y_train) - sum(y_train)) / max(sum(y_train), 1)
-        cv = GroupKFold(n_splits=min(5, len(np.unique(groups_train))))
+        n_folds = min(5, len(np.unique(groups_train)))
+        cv = GroupKFold(n_splits=n_folds)
 
 
 
+        # n_jobs=1 per model: GridSearchCV already runs the fits in parallel
         xgb_clf = xgb.XGBClassifier(
             random_state=self.random_state,
             scale_pos_weight=scale_pos_weight,
             eval_metric='logloss',
-            n_jobs=-1,
+            n_jobs=1,
             tree_method='hist'
         )
 
 
 
+        global_best = {'score': -np.inf, 'params': None, 'estimator': None, 'phase': None}
+
+
+
+        def run_phase(phase_name, grid, verbose):
+            n_combinations = prod(len(values) for values in grid.values())
+            print(f'\n🔍 {phase_name}... ({n_combinations} candidates, {n_combinations * n_folds} total fits)')
+            search = GridSearchCV(
+                xgb_clf,
+                grid,
+                cv=cv,
+                scoring='f1_macro',
+                n_jobs=-1,
+                verbose=verbose,
+            )
+            with Timer(f'XGBoost GridSearch {phase_name}'):
+                search.fit(X_train, y_train, groups=groups_train)
+
+
+
+            print(f'  {phase_name} best F1 Macro: {search.best_score_:.4f} → {search.best_params_}')
+            if search.best_score_ > global_best['score']:
+                global_best.update(
+                    score=float(search.best_score_),
+                    params=search.best_params_.copy(),
+                    estimator=search.best_estimator_,
+                    phase=phase_name,
+                )
+                print(f'  ✓ New global best from {phase_name}: {global_best["score"]:.4f}')
+            else:
+                print(f'  ↳ Global best remains: {global_best["score"]:.4f} from {global_best["phase"]}')
+            return search.best_params_
+
+
+
+        def around_zero_or_scale(value, zero_steps):
+            # Neighbours of a regularisation value; 0 has no multiplicative neighbours
+            return zero_steps if value == 0 else sorted({value / 2, value, value * 2})
+
+
+
+        # ==========================================
+        # Phase 1: Coarse Search
+        # ==========================================
         coarse_grid = {
-            'n_estimators': [100, 150, 200],
-            'max_depth': [2, 3, 4],
-            'learning_rate': [0.05, 0.1],
-            'min_child_weight': [1, 3],
+            'n_estimators': [100, 200, 400],
+            'max_depth': [2, 3, 4, 6, 8],
+            'learning_rate': [0.03, 0.1, 0.3],
+            'min_child_weight': [1, 5],
             'subsample': [0.8, 1.0],
             'colsample_bytree': [0.8, 1.0],
-            'gamma': [0.0, 0.1],
-            'reg_alpha': [0.0],
-            'reg_lambda': [1.0],
+            'gamma': [0.0, 0.5],
+            'reg_alpha': [0.0, 1.0],
+            'reg_lambda': [1.0, 5.0],
         }
+        c = run_phase('Phase 1: Coarse search', coarse_grid, verbose=1)
 
 
 
-        print('\n🔍 Phase 1: Coarse XGBoost search...')
-        with Timer('XGBoost GridSearch Phase 1'):
-            coarse_search = GridSearchCV(
-                xgb_clf,
-                coarse_grid,
-                cv=cv,
-                scoring='f1',
-                n_jobs=-1,
-                verbose=2,
-            )
-            coarse_search.fit(X_train, y_train, groups=groups_train)
-
-
-
-        best_coarse = coarse_search.best_params_
-        print(f'  Coarse best F1: {coarse_search.best_score_:.4f} → {best_coarse}')
-
-
-
-        c_nest = best_coarse['n_estimators']
-        c_depth = best_coarse['max_depth']
-        c_lr = best_coarse['learning_rate']
-        c_child = best_coarse['min_child_weight']
-        c_subsample = best_coarse['subsample']
-        c_colsample = best_coarse['colsample_bytree']
-        c_gamma = best_coarse['gamma']
-        c_alpha = best_coarse['reg_alpha']
-        c_lambda = best_coarse['reg_lambda']
-
-
-
-        med_grid = {
-            'n_estimators': sorted(set([
-                max(50, c_nest - 50),
-                c_nest,
-                c_nest + 50,
-            ])),
-            'max_depth': sorted(set([
-                max(2, c_depth - 1),
-                c_depth,
-                min(5, c_depth + 1),
-            ])),
-            'learning_rate': sorted(set([
-                max(0.02, c_lr * 0.75),
-                c_lr,
-                min(0.15, c_lr * 1.25),
-            ])),
-            'min_child_weight': sorted(set([
-                max(1, c_child - 1),
-                c_child,
-                c_child + 1,
-            ])),
-            'subsample': sorted(set([
-                max(0.7, c_subsample - 0.1),
-                c_subsample,
-                min(1.0, c_subsample + 0.1),
-            ])),
-            'colsample_bytree': sorted(set([
-                max(0.7, c_colsample - 0.1),
-                c_colsample,
-                min(1.0, c_colsample + 0.1),
-            ])),
-            'gamma': [c_gamma],
-            'reg_alpha': [c_alpha],
-            'reg_lambda': [c_lambda],
+        # ==========================================
+        # Phase 2: Medium Refinement
+        # ==========================================
+        medium_grid = {
+            'n_estimators': sorted({max(50, c['n_estimators'] - 100), c['n_estimators'], c['n_estimators'] + 100}),
+            'max_depth': sorted({max(2, c['max_depth'] - 1), c['max_depth'], min(10, c['max_depth'] + 1)}),
+            'learning_rate': sorted({round(c['learning_rate'] * 0.5, 4), c['learning_rate'], round(min(0.5, c['learning_rate'] * 1.5), 4)}),
+            'min_child_weight': sorted({max(1, c['min_child_weight'] - 2), c['min_child_weight'], c['min_child_weight'] + 2}),
+            'subsample': [c['subsample']],
+            'colsample_bytree': [c['colsample_bytree']],
+            'gamma': around_zero_or_scale(c['gamma'], [0.0, 0.1, 0.25]),
+            'reg_alpha': around_zero_or_scale(c['reg_alpha'], [0.0, 0.1, 0.5]),
+            'reg_lambda': around_zero_or_scale(c['reg_lambda'], [0.0, 0.5, 1.0]),
         }
+        m = run_phase('Phase 2: Medium refinement', medium_grid, verbose=1)
 
 
 
-        print('\n🔍 Phase 2: Medium XGBoost refinement...')
-        with Timer('XGBoost GridSearch Phase 2'):
-            med_search = GridSearchCV(
-                xgb_clf,
-                med_grid,
-                cv=cv,
-                scoring='f1',
-                n_jobs=-1,
-                verbose=1,
-            )
-            med_search.fit(X_train, y_train, groups=groups_train)
-
-
-
-        best_med = med_search.best_params_
-        print(f'  Medium best F1: {med_search.best_score_:.4f} → {best_med}')
-
-
-
-        m_nest = best_med['n_estimators']
-        m_depth = best_med['max_depth']
-        m_lr = best_med['learning_rate']
-        m_child = best_med['min_child_weight']
-        m_subsample = best_med['subsample']
-        m_colsample = best_med['colsample_bytree']
-        m_gamma = best_med['gamma']
-        m_alpha = best_med['reg_alpha']
-        m_lambda = best_med['reg_lambda']
-
-
-
+        # ==========================================
+        # Phase 3: Fine Tuning
+        # ==========================================
         fine_grid = {
-            'n_estimators': sorted(set([
-                max(50, m_nest - 25),
-                m_nest,
-                m_nest + 25,
-            ])),
-            'max_depth': sorted(set([
-                max(2, m_depth - 1),
-                m_depth,
-                min(5, m_depth + 1),
-            ])),
-            'learning_rate': sorted(set([
-                max(0.01, m_lr * 0.85),
-                m_lr,
-                min(0.15, m_lr * 1.15),
-            ])),
-            'min_child_weight': [m_child],
-            'subsample': sorted(set([
-                max(0.7, m_subsample - 0.05),
-                m_subsample,
-                min(1.0, m_subsample + 0.05),
-            ])),
-            'colsample_bytree': sorted(set([
-                max(0.7, m_colsample - 0.05),
-                m_colsample,
-                min(1.0, m_colsample + 0.05),
-            ])),
-            'gamma': [m_gamma],
-            'reg_alpha': [m_alpha],
-            'reg_lambda': [m_lambda],
+            'n_estimators': sorted({max(50, m['n_estimators'] - 50), m['n_estimators'], m['n_estimators'] + 50}),
+            'max_depth': [m['max_depth']],
+            'learning_rate': sorted({round(m['learning_rate'] * 0.8, 4), m['learning_rate'], round(m['learning_rate'] * 1.2, 4)}),
+            'min_child_weight': [m['min_child_weight']],
+            'subsample': sorted({max(0.6, round(m['subsample'] - 0.1, 2)), m['subsample'], min(1.0, round(m['subsample'] + 0.1, 2))}),
+            'colsample_bytree': sorted({max(0.6, round(m['colsample_bytree'] - 0.1, 2)), m['colsample_bytree'], min(1.0, round(m['colsample_bytree'] + 0.1, 2))}),
+            'gamma': [m['gamma']],
+            'reg_alpha': [m['reg_alpha']],
+            'reg_lambda': [m['reg_lambda']],
         }
-
-
-
-        print('\n🔍 Phase 3: Fine XGBoost tuning...')
-        with Timer('XGBoost GridSearch Phase 3'):
-            fine_search = GridSearchCV(
-                xgb_clf,
-                fine_grid,
-                cv=cv,
-                scoring='f1',
-                n_jobs=-1,
-                verbose=1,
-            )
-            fine_search.fit(X_train, y_train, groups=groups_train)
+        run_phase('Phase 3: Fine tuning', fine_grid, verbose=1)
 
 
 
         print('\n✓ Progressive XGBoost GridSearch Complete!')
-        print(f'  Final Best F1: {fine_search.best_score_:.4f}')
-        print(f'  Final Best Params: {fine_search.best_params_}')
+        print(f'  Winning phase:   {global_best["phase"]}')
+        print(f'  Best F1 Macro:   {global_best["score"]:.4f}')
+        print(f'  Best parameters: {global_best["params"]}')
 
 
 
-        self.best_params = fine_search.best_params_
-        self.model = fine_search.best_estimator_
+        self.best_params = global_best['params']
+        self.best_cv_score = global_best['score']
+        self.model = global_best['estimator']
         return self.model
 
 
@@ -391,13 +331,20 @@ class XGBoostConeDetector:
             "best_params": self.best_params,
             "cv_f1_mean": float(cv_results["test_f1"].mean()),
             "cv_f1_std": float(cv_results["test_f1"].std()),
-            "feature_importances": {f: float(i) for f, i in zip(self.feature_names, self.model.feature_importances_)}
+            "feature_importances": {f: float(i) for f, i in zip(self.feature_names, self.model.feature_importances_)},
+            "feature_names": self.feature_names,
+            "gridsearch_cv_f1_macro": getattr(self, "best_cv_score", None),
+            "f1_macro": float(f1_score(y_test, y_test_pred, average='macro', zero_division=0)),
+            "noncone_precision": float(precision_score(y_test, y_test_pred, pos_label=0, zero_division=0)),
+            "noncone_recall": float(recall_score(y_test, y_test_pred, pos_label=0, zero_division=0)),
+            "confusion_matrix": confusion_matrix(y_test, y_test_pred, labels=[0, 1]).tolist(),
         }
 
 
 
-        logger = TrainingLogger(self.repo_root, "xgboost")
+        logger = TrainingLogger(self.repo_root, self.output_name)
         logger.log_metrics(log_metrics)
+        return log_metrics
 
 
 
@@ -407,14 +354,15 @@ class XGBoostConeDetector:
 
 
 
-        plt.figure(figsize=(8, 6))
+        n = len(self.feature_names)
+        plt.figure(figsize=(max(8, 0.75 * n), max(6, 0.6 * n)))
         sns.heatmap(corr, annot=True, cmap='coolwarm', center=0, fmt='.2f')
         plt.title('Feature Correlation Matrix - XGBoost', fontsize=14)
         plt.tight_layout()
 
 
 
-        out_dir = self.repo_root / 'figures' / 'detection' / 'xgboost'
+        out_dir = self.repo_root / 'figures' / 'detection' / self.output_name
         out_dir.mkdir(parents=True, exist_ok=True)
         plt.savefig(out_dir / 'xgb_feature_correlation.png', dpi=300, bbox_inches='tight')
         plt.close()
@@ -433,7 +381,7 @@ class XGBoostConeDetector:
 
 
 
-        out_dir = self.repo_root / 'figures' / 'detection' / 'xgboost'
+        out_dir = self.repo_root / 'figures' / 'detection' / self.output_name
         out_dir.mkdir(parents=True, exist_ok=True)
         plt.savefig(out_dir / 'xgb_confusion_matrix.png', dpi=300, bbox_inches='tight')
         plt.close()
@@ -453,7 +401,7 @@ class XGBoostConeDetector:
 
 
 
-        out_dir = self.repo_root / 'figures' / 'detection' / 'xgboost'
+        out_dir = self.repo_root / 'figures' / 'detection' / self.output_name
         out_dir.mkdir(parents=True, exist_ok=True)
         plt.savefig(out_dir / 'xgb_feature_importances.png', dpi=300, bbox_inches='tight')
         plt.close()
@@ -480,8 +428,10 @@ def run_xgb_pipeline(
     use_gridsearch=True,
     train_idx=None,
     test_idx=None,
+    feature_names=None,
+    output_name="xgboost",
 ):
-    detector = XGBoostConeDetector(repo_root)
+    detector = XGBoostConeDetector(repo_root, feature_names=feature_names, output_name=output_name)
     detector.train(
         X,
         y,
@@ -491,6 +441,6 @@ def run_xgb_pipeline(
         test_idx=test_idx,
     )
     detector.save(
-        repo_root / 'models' / 'detection' / 'xgboost' / 'cone_detector_xgb.pkl',
-        repo_root / 'models' / 'detection' / 'xgboost' / 'cone_detector_xgb.json'
+        repo_root / 'models' / 'detection' / output_name / 'cone_detector_xgb.pkl',
+        repo_root / 'models' / 'detection' / output_name / 'cone_detector_xgb.json'
     )

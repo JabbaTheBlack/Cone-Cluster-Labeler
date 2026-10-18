@@ -45,22 +45,25 @@ class TrainingLogger:
 
 
 class RandomForestConeDetector:
-    def __init__(self, repo_root, random_state=42):
+    def __init__(self, repo_root, random_state=42, feature_names=None, output_name="random_forest"):
         self.repo_root = Path(repo_root)
         self.random_state = random_state
         self.scaler = StandardScaler()
         self.model = None
         self.best_params = None
-        self.feature_names = FEATURE_NAMES
+        self.feature_names = list(feature_names) if feature_names is not None else FEATURE_NAMES
+        # Subfolder under logs/detection and figures/detection
+        self.output_name = output_name
 
 
     def cross_validate(self, X_scaled, y, groups, cv_folds=5):
         effective_folds = min(cv_folds, len(np.unique(groups)))
         print(f'\n🔍 {effective_folds}-Fold Cross-Validation (F1 scoring)...')
+        # n_jobs=1 per model: cross_validate already runs the folds in parallel
         rf_temp = RandomForestClassifier(
             **self.best_params,
             random_state=self.random_state,
-            n_jobs=-1
+            n_jobs=1
         )
         
         cv_results = cross_validate(
@@ -82,10 +85,11 @@ class RandomForestConeDetector:
 
 
     def gridsearch(self, X_train, y_train, groups_train):
+            # n_jobs=1 per model: GridSearchCV already runs the fits in parallel
             rf = RandomForestClassifier(
                 random_state=self.random_state,
                 class_weight='balanced_subsample',
-                n_jobs=-1
+                n_jobs=1
             )
     
             global_best_score = -np.inf
@@ -179,13 +183,16 @@ class RandomForestConeDetector:
             c_leaf = best_coarse['min_samples_leaf']
             c_features = best_coarse['max_features']
     
-            medium_depths = sorted({
-                max(4, c_depth - 4),
-                max(4, c_depth - 2),
-                c_depth,
-                min(18, c_depth + 2),
-                min(18, c_depth + 4)
-            })
+            if c_depth is None:
+                medium_depths = [None, 20, 25, 30]
+            else:
+                medium_depths = sorted({
+                    max(4, c_depth - 4),
+                    max(4, c_depth - 2),
+                    c_depth,
+                    min(18, c_depth + 2),
+                    min(18, c_depth + 4)
+                })
 
             medium_estimators = sorted({
                 max(50, c_nest - 50),
@@ -316,6 +323,7 @@ class RandomForestConeDetector:
                 )
     
             self.best_params = global_best_params
+            self.best_cv_score = float(global_best_score)
             self.model = global_best_estimator
     
             print('\n✓ Progressive GridSearch Complete!')
@@ -413,12 +421,19 @@ class RandomForestConeDetector:
             "best_params": self.best_params,
             "cv_f1_mean": float(cv_results["test_f1"].mean()),
             "cv_f1_std": float(cv_results["test_f1"].std()),
-            "feature_importances": {f: float(i) for f, i in zip(self.feature_names, self.model.feature_importances_)}
+            "feature_importances": {f: float(i) for f, i in zip(self.feature_names, self.model.feature_importances_)},
+            "feature_names": self.feature_names,
+            "gridsearch_cv_f1_macro": getattr(self, "best_cv_score", None),
+            "f1_macro": float(f1_score(y_test, y_test_pred, average='macro', zero_division=0)),
+            "noncone_precision": float(precision_score(y_test, y_test_pred, pos_label=0, zero_division=0)),
+            "noncone_recall": float(recall_score(y_test, y_test_pred, pos_label=0, zero_division=0)),
+            "confusion_matrix": confusion_matrix(y_test, y_test_pred, labels=[0, 1]).tolist(),
         }
 
 
-        logger = TrainingLogger(self.repo_root, "random_forest")
+        logger = TrainingLogger(self.repo_root, self.output_name)
         logger.log_metrics(log_metrics)
+        return log_metrics
 
 
     def plot_feature_correlation(self, X):
@@ -426,13 +441,14 @@ class RandomForestConeDetector:
         corr = feat_df.corr()
 
 
-        plt.figure(figsize=(8, 6))
+        n = len(self.feature_names)
+        plt.figure(figsize=(max(8, 0.75 * n), max(6, 0.6 * n)))
         sns.heatmap(corr, annot=True, cmap='coolwarm', center=0, fmt='.2f')
         plt.title('Feature Correlation Matrix - Random Forest', fontsize=14)
         plt.tight_layout()
 
 
-        out_dir = self.repo_root / 'figures' / 'detection' / 'random_forest'
+        out_dir = self.repo_root / 'figures' / 'detection' / self.output_name
         out_dir.mkdir(parents=True, exist_ok=True)
         plt.savefig(out_dir / 'rf_feature_correlation.png', dpi=300, bbox_inches='tight')
         plt.close()
@@ -449,7 +465,7 @@ class RandomForestConeDetector:
         plt.tight_layout()
 
 
-        out_dir = self.repo_root / 'figures' / 'detection' / 'random_forest'
+        out_dir = self.repo_root / 'figures' / 'detection' / self.output_name
         out_dir.mkdir(parents=True, exist_ok=True)
         plt.savefig(out_dir / 'rf_confusion_matrix.png', dpi=300, bbox_inches='tight')
         plt.close()
@@ -466,7 +482,7 @@ class RandomForestConeDetector:
         plt.tight_layout()
 
 
-        out_dir = self.repo_root / 'figures' / 'detection' / 'random_forest'
+        out_dir = self.repo_root / 'figures' / 'detection' / self.output_name
         out_dir.mkdir(parents=True, exist_ok=True)
         plt.savefig(out_dir / 'rf_feature_importances.png', dpi=300, bbox_inches='tight')
         plt.close()
@@ -511,8 +527,10 @@ def run_rf_pipeline(
     use_gridsearch=True,
     train_idx=None,
     test_idx=None,
+    feature_names=None,
+    output_name="random_forest",
 ):
-    detector = RandomForestConeDetector(repo_root)
+    detector = RandomForestConeDetector(repo_root, feature_names=feature_names, output_name=output_name)
     detector.train(
         X,
         y,
@@ -522,6 +540,6 @@ def run_rf_pipeline(
         test_idx=test_idx,
     )
     detector.save(
-        repo_root / 'models' / 'detection' / 'random_forest' / 'cone_detector_rf.pkl',
-        repo_root / 'models' / 'detection' / 'random_forest' / 'cone_detector_rf.bin'
+        repo_root / 'models' / 'detection' / output_name / 'cone_detector_rf.pkl',
+        repo_root / 'models' / 'detection' / output_name / 'cone_detector_rf.bin'
     )
