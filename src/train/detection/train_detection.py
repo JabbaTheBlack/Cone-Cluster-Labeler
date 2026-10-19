@@ -69,16 +69,16 @@ def grouped_train_test_split_best_effort(X, y, groups, test_size=0.2):
 
     for group_count in range(1, len(unique_groups)):
         for test_group_combo in combinations(unique_groups, group_count):
+             
             test_group_set = set(test_group_combo)
             train_group_set = set(unique_groups) - test_group_set
-
+            train_group_combo = [group for group in unique_groups if group in train_group_set]
 
             if not train_group_set or not test_group_set:
                 continue
 
-
-            test_idx = np.concatenate([group_to_indices[group] for group in test_group_combo])
-            train_idx = np.concatenate([group_to_indices[group] for group in train_group_set])
+            test_idx = np.sort(np.concatenate([group_to_indices[group] for group in test_group_combo]))
+            train_idx = np.sort(np.concatenate([group_to_indices[group] for group in train_group_combo]))
 
 
             if len(np.unique(y[train_idx])) < 2 or len(np.unique(y[test_idx])) < 2:
@@ -188,7 +188,7 @@ class MultiTrackDatasetBuilder:
 
 
     def _discover_tracks(self):
-        for labels_path in self.base_path.rglob("labeled_clusters.json"):
+        for labels_path in sorted(self.base_path.rglob("labeled_clusters.json")):
             with labels_path.open(encoding="utf-8") as file:
                 labels = json.load(file)
             track_folder = labels_path.parent
@@ -234,7 +234,7 @@ class MultiTrackDatasetBuilder:
         for candidate in candidates:
             if candidate.is_file():
                 return candidate
-        matches = list(self.base_path.rglob(filename_path.name))
+        matches = sorted(self.base_path.rglob(filename_path.name))
         return matches[0] if matches else None
 
 
