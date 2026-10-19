@@ -88,14 +88,18 @@ def extract_extended_features(cluster_points: np.ndarray) -> np.ndarray:
     distances = np.linalg.norm(xyz - center, axis=1)
     compactness = float(np.std(distances) / (np.mean(distances) + 1e-6))  # Spread of point-to-centroid distances
 
-    intensity_mean = float(intensity.mean())
-    intensity_std = float(intensity.std())
-
     eigenvalues = np.linalg.eigvalsh(np.cov(xyz.T))                   # Ascending order
     linearity = float((eigenvalues[2] - eigenvalues[1]) / (eigenvalues[2] + 1e-6))
     planarity = float((eigenvalues[1] - eigenvalues[0]) / (eigenvalues[2] + 1e-6))
 
     distancefromlidar = float(np.linalg.norm(center))
+
+    i_normalized = np.clip(intensity / 255.0, 0.0, 1.0)
+    range_factor = (max(distancefromlidar, 0.5) / 10) ** 2
+    intensity = i_normalized * range_factor
+
+    intensity_mean = float(intensity.mean())
+    intensity_std = float(intensity.std())
 
     return np.array([
         height, width, depth, aspect_ratio, num_points,
