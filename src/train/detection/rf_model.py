@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 from math import prod
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import GroupKFold, GroupShuffleSplit, GridSearchCV, cross_validate
+from sklearn.model_selection import GroupKFold, GroupShuffleSplit, GridSearchCV, cross_validate, StratifiedGroupKFold
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
 from features import FEATURE_NAMES
 
@@ -42,6 +42,7 @@ class TrainingLogger:
     def log_metrics(self, metrics: dict):
         with open(self.log_file, "a") as f:
             f.write("\n" + json.dumps(metrics))
+        print(f'  Saved: {self.log_file.resolve()}')
 
 
 class RandomForestConeDetector:
@@ -68,270 +69,178 @@ class RandomForestConeDetector:
         
         cv_results = cross_validate(
             rf_temp, X_scaled, y, groups=groups,
-            cv=GroupKFold(n_splits=effective_folds),
-            scoring=['accuracy', 'precision', 'recall', 'f1'],
+            cv=StratifiedGroupKFold(n_splits=effective_folds, shuffle=True, random_state=self.random_state),
+            scoring=['accuracy', 'precision_macro', 'recall_macro', 'f1_macro'],
             return_train_score=True, n_jobs=-1
         )
 
 
-        print(f'  CV F1:        {cv_results["test_f1"].mean():.4f} ± {cv_results["test_f1"].std():.4f}')
-        print(f'  CV Accuracy:  {cv_results["test_accuracy"].mean():.4f} ± {cv_results["test_accuracy"].std():.4f}')
-        print(f'  CV Precision: {cv_results["test_precision"].mean():.4f} ± {cv_results["test_precision"].std():.4f}')
-        print(f'  CV Recall:    {cv_results["test_recall"].mean():.4f} ± {cv_results["test_recall"].std():.4f}')
-        print(f'  Train F1:     {cv_results["train_f1"].mean():.4f} (overfitting check)')
-
+        print(f'  CV F1 (Macro): {cv_results["test_f1_macro"].mean():.4f} ± {cv_results["test_f1_macro"].std():.4f}')
+        print(f'  CV Accuracy:   {cv_results["test_accuracy"].mean():.4f} ± {cv_results["test_accuracy"].std():.4f}')
+        print(f'  CV Precision:  {cv_results["test_precision_macro"].mean():.4f} ± {cv_results["test_precision_macro"].std():.4f}')
+        print(f'  CV Recall:     {cv_results["test_recall_macro"].mean():.4f} ± {cv_results["test_recall_macro"].std():.4f}')
+        print(f'  Train F1 Macro:{cv_results["train_f1_macro"].mean():.4f} (overfitting check)')
 
         return cv_results
 
+    def gridsearch(self, X_train, y_train, groups_train=None):
+        rf = RandomForestClassifier(
+            random_state=self.random_state,
+            class_weight='balanced_subsample',
+        )
 
-    def gridsearch(self, X_train, y_train, groups_train):
-            # n_jobs=1 per model: GridSearchCV already runs the fits in parallel
-            rf = RandomForestClassifier(
-                random_state=self.random_state,
-                class_weight='balanced_subsample',
-                n_jobs=1
+        global_best_score = -1.0
+        global_best_params = None
+        global_best_estimator = None
+        global_best_phase = None
+
+        # Determine effective folds for GroupKFold if groups are provided
+        if groups_train is not None:
+            n_unique_groups = len(np.unique(groups_train))
+            n_splits = min(5, n_unique_groups)
+            cv_splitter = StratifiedGroupKFold(n_splits=n_splits, shuffle=True, random_state=self.random_state)
+        else:
+            cv_splitter = 5
+
+        def evaluate_phase(search, phase_name, grid):
+            nonlocal global_best_score, global_best_params, global_best_estimator, global_best_phase
+
+            n_combinations = prod(len(values) for values in grid.values())
+            total_fits = n_combinations * (cv_splitter.get_n_splits() if hasattr(cv_splitter, 'get_n_splits') else cv_splitter)
+
+            print(
+                f'\n🔍 {phase_name}... '
+                f'({n_combinations} candidates, {total_fits} total fits)'
             )
-    
-            global_best_score = -np.inf
-            global_best_params = None
-            global_best_estimator = None
-            global_best_phase = None
 
-            group_cv = GroupKFold(n_splits=5)
-    
-            def evaluate_phase(search, phase_name, grid):
-                nonlocal global_best_score
-                nonlocal global_best_params
-                nonlocal global_best_estimator
-                nonlocal global_best_phase
-    
-                n_combinations = prod(len(values) for values in grid.values())
-                total_fits = n_combinations * 5
-    
-                print(
-                    f'\n🔍 {phase_name}... '
-                    f'({n_combinations} candidates, {total_fits} total fits)'
-                )
-    
-                with Timer(f'GridSearch {phase_name}'):
+            with Timer(f'GridSearch {phase_name}'):
+                if groups_train is not None:
                     search.fit(X_train, y_train, groups=groups_train)
-    
-                phase_score = float(search.best_score_)
-                phase_params = search.best_params_
-    
-                print(
-                    f'  {phase_name} best F1 Macro: '
-                    f'{phase_score:.4f} → {phase_params}'
-                )
-    
-                if phase_score > global_best_score:
-                    global_best_score = phase_score
-                    global_best_params = phase_params.copy()
-                    global_best_estimator = search.best_estimator_
-                    global_best_phase = phase_name
-    
-                    print(
-                        f'  ✓ New global best from {phase_name}: '
-                        f'{global_best_score:.4f}'
-                    )
                 else:
-                    print(
-                        f'  ↳ Global best remains: '
-                        f'{global_best_score:.4f} '
-                        f'from {global_best_phase}'
-                    )
-    
-                return search
-    
-            # ==========================================
-            # Phase 1: Coarse Search
-            # ==========================================
-            coarse_grid = {
-                'n_estimators': [100, 200, 300, 400],
-                'max_depth': [10, 20, 30, None],
-                'min_samples_split': [8, 12, 16, 20],
-                'min_samples_leaf': [4, 6, 8, 12, 16],
-                'max_features': ['sqrt', 'log2']
-            }
+                    search.fit(X_train, y_train)
 
-    
-            coarse_search = GridSearchCV(
-                estimator=rf,
-                param_grid=coarse_grid,
-                cv=group_cv,
-                scoring='f1_macro',
-                n_jobs=-1,
-                refit=True,
-                return_train_score=True,
-                verbose=2
+            best_idx = search.best_index_
+            mean_cv_score = float(search.cv_results_['mean_test_score'][best_idx])
+            mean_train_score = float(search.cv_results_['mean_train_score'][best_idx])
+            overfit_gap = mean_train_score - mean_cv_score
+
+            print(
+                f'   {phase_name} Best F1 Macro (CV): {mean_cv_score:.4f} '
+                f'| Train F1: {mean_train_score:.4f} '
+                f'| Overfit Gap: {overfit_gap:.4f}'
             )
-    
-            evaluate_phase(
-                coarse_search,
-                'Phase 1: Coarse search',
-                coarse_grid
-            )
-    
-            best_coarse = coarse_search.best_params_
-    
-            # ==========================================
-            # Phase 2: Medium Refinement
-            # ==========================================
-            c_nest = best_coarse['n_estimators']
-            c_depth = best_coarse['max_depth']
-            c_split = best_coarse['min_samples_split']
-            c_leaf = best_coarse['min_samples_leaf']
-            c_features = best_coarse['max_features']
-    
-            if c_depth is None:
-                medium_depths = [None, 20, 25, 30]
+
+            if mean_cv_score > global_best_score:
+                global_best_score = mean_cv_score
+                global_best_params = search.best_params_.copy()
+                global_best_estimator = search.best_estimator_
+                global_best_phase = phase_name
+
+                print(f'   ✓ New global best from {phase_name}: {global_best_score:.4f}')
             else:
-                medium_depths = sorted({
-                    max(4, c_depth - 4),
-                    max(4, c_depth - 2),
-                    c_depth,
-                    min(18, c_depth + 2),
-                    min(18, c_depth + 4)
-                })
+                print(f'   ↳ Global best remains: {global_best_score:.4f} from {global_best_phase}')
 
-            medium_estimators = sorted({
-                max(50, c_nest - 50),
-                c_nest,
-                c_nest + 50,
-                c_nest + 100
-            })
+            return search
 
-            # Enforce minimum split bound (>= 6)
-            medium_split = sorted({
-                max(6, c_split - 4),
-                max(6, c_split - 2),
-                c_split,
-                c_split + 2,
-                c_split + 4
-            })
+        # ==========================================
+        # Phase 1: Baseline Coarse Search
+        # ==========================================
+        coarse_grid = {
+            'n_estimators': [100, 200, 300],
+            'max_depth': [8, 14, 20],
+            'min_samples_split': [8, 16],
+            'min_samples_leaf': [3, 6],
+            'max_features': ['sqrt'],
+            'class_weight': ['balanced_subsample']
+        }
 
-            # Enforce minimum leaf bound (>= 3)
-            medium_leaf = sorted({
-                max(4, c_leaf - 2),
-                max(4, c_leaf - 1),
-                c_leaf,
-                c_leaf + 1,
-                c_leaf + 2
-            })
-    
-            medium_grid = {
-                'n_estimators': medium_estimators,
-                'max_depth': medium_depths,
-                'min_samples_split': medium_split,
-                'min_samples_leaf': medium_leaf,
-                'max_features': [c_features]
-            }
-    
-            medium_search = GridSearchCV(
-                estimator=rf,
-                param_grid=medium_grid,
-                cv=group_cv,
-                scoring='f1_macro',
-                n_jobs=-1,
-                refit=True,
-                return_train_score=True,
-                verbose=2
-            )
-    
-            evaluate_phase(
-                medium_search,
-                'Phase 2: Medium refinement',
-                medium_grid
-            )
-    
-            best_medium = medium_search.best_params_
-    
-            # ==========================================
-            # Phase 3: Fine Tuning
-            # ==========================================
-            m_nest = best_medium['n_estimators']
-            m_depth = best_medium['max_depth']
-            m_split = best_medium['min_samples_split']
-            m_leaf = best_medium['min_samples_leaf']
-            m_features = best_medium['max_features']
-    
-            if m_depth is None:
-                fine_depths = [None, 25, 35, 45]
-            else:
-                fine_depths = sorted({
-                    max(3, m_depth - 4),
-                    max(3, m_depth - 2),
-                    m_depth,
-                    m_depth + 2,
-                    m_depth + 4
-                })
-    
-            fine_estimators = sorted({
-                max(20, m_nest - 30),
-                max(20, m_nest - 20),
-                max(20, m_nest - 10),
-                m_nest,
-                m_nest + 10,
-                m_nest + 20,
-                m_nest + 30
-            })
-    
-            fine_split = sorted({
-                max(2, m_split - 2),
-                max(2, m_split - 1),
-                m_split,
-                m_split + 1,
-                m_split + 2
-            })
-    
-            fine_leaf = sorted({
-                max(4, m_leaf - 2),
-                max(4, m_leaf - 1),
-                m_leaf,
-                m_leaf + 1,
-                m_leaf + 2
-            })
-    
-            fine_grid = {
-                'n_estimators': fine_estimators,
-                'max_depth': fine_depths,
-                'min_samples_split': fine_split,
-                'min_samples_leaf': fine_leaf,
-                'max_features': [m_features]
-            }
-    
-            fine_search = GridSearchCV(
-                estimator=rf,
-                param_grid=fine_grid,
-                cv=group_cv,
-                scoring='f1_macro',
-                n_jobs=-1,
-                refit=True,
-                return_train_score=True,
-                verbose=2
-            )
-    
-            evaluate_phase(
-                fine_search,
-                'Phase 3: Fine tuning',
-                fine_grid
-            )
-    
-            if global_best_estimator is None:
-                raise RuntimeError(
-                    'Progressive grid search did not produce a valid estimator.'
-                )
-    
-            self.best_params = global_best_params
-            self.best_cv_score = float(global_best_score)
-            self.model = global_best_estimator
-    
-            print('\n✓ Progressive GridSearch Complete!')
-            print(f'  Winning phase:   {global_best_phase}')
-            print(f'  Best F1 Macro:   {global_best_score:.4f}')
-            print(f'  Best parameters: {self.best_params}')
-    
-            return self.model
+        coarse_search = GridSearchCV(
+            estimator=rf,
+            param_grid=coarse_grid,
+            cv=cv_splitter,
+            scoring='f1_macro',
+            n_jobs=-1,
+            refit=True,
+            return_train_score=True,
+            verbose=1
+        )
+
+        evaluate_phase(coarse_search, 'Phase 1: Coarse search', coarse_grid)
+        best_coarse = coarse_search.best_params_
+
+        # ==========================================
+        # Phase 2: Medium Refinement
+        # ==========================================
+        c_nest = best_coarse['n_estimators']
+        c_depth = best_coarse['max_depth']
+        c_split = best_coarse['min_samples_split']
+        c_leaf = best_coarse['min_samples_leaf']
+
+        medium_grid = {
+            'n_estimators': sorted({max(50, c_nest - 50), c_nest, c_nest + 50}),
+            'max_depth': sorted({max(4, c_depth - 2), c_depth, min(25, c_depth + 2)}),
+            'min_samples_split': sorted({max(4, c_split - 4), c_split, c_split + 4}),
+            'min_samples_leaf': sorted({max(2, c_leaf - 2), c_leaf, c_leaf + 2}),
+            'max_features': ['sqrt'],
+            'class_weight': ['balanced_subsample']
+        }
+
+        medium_search = GridSearchCV(
+            estimator=rf,
+            param_grid=medium_grid,
+            cv=cv_splitter,
+            scoring='f1_macro',
+            n_jobs=-1,
+            refit=True,
+            return_train_score=True,
+            verbose=1
+        )
+
+        evaluate_phase(medium_search, 'Phase 2: Medium refinement', medium_grid)
+        best_medium = medium_search.best_params_
+
+        # ==========================================
+        # Phase 3: Fine Tuning
+        # ==========================================
+        m_nest = best_medium['n_estimators']
+        m_depth = best_medium['max_depth']
+        m_split = best_medium['min_samples_split']
+        m_leaf = best_medium['min_samples_leaf']
+
+        fine_grid = {
+            'n_estimators': sorted({max(30, m_nest - 20), m_nest, m_nest + 20}),
+            'max_depth': [m_depth],
+            'min_samples_split': sorted({max(2, m_split - 2), m_split, m_split + 2}),
+            'min_samples_leaf': sorted({max(1, m_leaf - 1), m_leaf, m_leaf + 1}),
+            'max_features': ['sqrt', 'log2'],
+            'class_weight': ['balanced_subsample']
+        }
+
+        fine_search = GridSearchCV(
+            estimator=rf,
+            param_grid=fine_grid,
+            cv=cv_splitter,
+            scoring='f1_macro',
+            n_jobs=-1,
+            refit=True,
+            return_train_score=True,
+            verbose=1
+        )
+
+        evaluate_phase(fine_search, 'Phase 3: Fine tuning', fine_grid)
+
+        if global_best_estimator is None:
+            raise RuntimeError('Progressive grid search did not produce a valid RF estimator.')
+
+        self.best_params = global_best_params
+        self.model = global_best_estimator
+
+        print('\n✓ Progressive Random Forest GridSearch Complete!')
+        print(f'   Winning phase:   {global_best_phase}')
+        print(f'   Best F1 Macro:   {global_best_score:.4f}')
+        print(f'   Best parameters: {self.best_params}')
+
+        return self.model
 
 
     def train(self, X, y, groups, use_gridsearch=True, train_idx=None, test_idx=None):
@@ -378,9 +287,8 @@ class RandomForestConeDetector:
                 self.model.fit(X_train_scaled, y_train)
 
 
-        X_full_scaled = self.scaler.transform(X)
         with Timer('Cross-validation'):
-            cv_results = self.cross_validate(X_full_scaled, y, groups)
+            cv_results = self.cross_validate(X_train_scaled, y_train, groups_train)
 
 
         self.plot_feature_correlation(X)
@@ -390,15 +298,15 @@ class RandomForestConeDetector:
         y_test_pred = self.model.predict(X_test_scaled)
 
 
+        train_f1 = f1_score(y_train, y_train_pred, average='macro', zero_division=0)
         train_accuracy = accuracy_score(y_train, y_train_pred)
         test_acc = accuracy_score(y_test, y_test_pred)
-        test_precision = precision_score(y_test, y_test_pred, zero_division=0)
-        test_recall = recall_score(y_test, y_test_pred, zero_division=0)
-        test_f1_score = f1_score(y_test, y_test_pred, zero_division=0)
-
+        test_precision = precision_score(y_test, y_test_pred, average='macro', zero_division=0)
+        test_recall = recall_score(y_test, y_test_pred, average='macro', zero_division=0)
+        test_f1_score = f1_score(y_test, y_test_pred, average='macro', zero_division=0)
 
         print(f'\n✓ Evaluation Results:')
-        print(f'  Train Acc: {train_accuracy:.2%}')
+        print(f'  Train F1: {train_f1:.2%}')
         print(f'  Test Acc:  {test_acc:.2%}')
         print(f'  Precision: {test_precision:.2%}')
         print(f'  Recall:    {test_recall:.2%}')
@@ -413,14 +321,14 @@ class RandomForestConeDetector:
             "dataset_size": len(X),
             "train_size": len(X_train),
             "test_size": len(X_test),
-            "train_accuracy": float(train_accuracy),
+            "train_f1": float(train_f1),
             "test_accuracy": float(test_acc),
             "precision": float(test_precision),
             "recall": float(test_recall),
             "f1_score": float(test_f1_score),
             "best_params": self.best_params,
-            "cv_f1_mean": float(cv_results["test_f1"].mean()),
-            "cv_f1_std": float(cv_results["test_f1"].std()),
+            "cv_f1_mean": float(cv_results["test_f1_macro"].mean()),
+            "cv_f1_std": float(cv_results["test_f1_macro"].std()),
             "feature_importances": {f: float(i) for f, i in zip(self.feature_names, self.model.feature_importances_)},
             "feature_names": self.feature_names,
             "gridsearch_cv_f1_macro": getattr(self, "best_cv_score", None),
@@ -452,6 +360,7 @@ class RandomForestConeDetector:
         out_dir.mkdir(parents=True, exist_ok=True)
         plt.savefig(out_dir / 'rf_feature_correlation.png', dpi=300, bbox_inches='tight')
         plt.close()
+        print(f'  Saved: {(out_dir / "rf_feature_correlation.png").resolve()}')
 
 
     def visualize_confusion_matrix(self, y_true, y_pred):
@@ -469,6 +378,7 @@ class RandomForestConeDetector:
         out_dir.mkdir(parents=True, exist_ok=True)
         plt.savefig(out_dir / 'rf_confusion_matrix.png', dpi=300, bbox_inches='tight')
         plt.close()
+        print(f'  Saved: {(out_dir / "rf_confusion_matrix.png").resolve()}  (matrix total = {cm.sum()})')
 
 
     def visualize_feature_importances(self):
@@ -486,6 +396,7 @@ class RandomForestConeDetector:
         out_dir.mkdir(parents=True, exist_ok=True)
         plt.savefig(out_dir / 'rf_feature_importances.png', dpi=300, bbox_inches='tight')
         plt.close()
+        print(f'  Saved: {(out_dir / "rf_feature_importances.png").resolve()}')
 
 
     def save(self, pkl_path, bin_path):
