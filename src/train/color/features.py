@@ -39,9 +39,9 @@ import pandas as pd
 #     ], dtype=np.float32)
 
 FEATURE_NAMES = [
-    'norm_avg_i', 'norm_std_i', 'v_grad', 'aspect_ratio',
+    'norm_avg_i', 'norm_std_i', 'v_grad',
     'contrast', 'reflective_point_pct', 'contrast_bot_mid',
-    'contrast_mid_top', 'contrast_bot_top', 'distance', 'num_points',
+    'contrast_mid_top', 'contrast_bot_top',
     'skew_i', 'q10', 'q50', 'q90', 'reflectivity_ratio'
 ]
 
@@ -110,9 +110,9 @@ def extract_extended_features(points, eta=2.0, r_ref=14.0):
     reflectivity_ratio = float(avg_i / (float(i_normalized.mean()) + 1e-4))
 
     return np.array([
-        norm_avg_i, norm_std_i, v_grad, aspect_ratio,
+        norm_avg_i, norm_std_i, v_grad,
         contrast, reflective_point_pct, contrast_bot_mid,
-        contrast_mid_top, contrast_bot_top, distance, num_points,
+        contrast_mid_top, contrast_bot_top,
         skew_i, q10, q50, q90, reflectivity_ratio
     ], dtype=np.float32)
 
