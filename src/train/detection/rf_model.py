@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 from math import prod
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import GroupKFold, GroupShuffleSplit, GridSearchCV, cross_validate, StratifiedGroupKFold
+from sklearn.model_selection import GroupShuffleSplit, GridSearchCV, cross_validate, StratifiedGroupKFold
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
 from features import FEATURE_NAMES
 
@@ -21,11 +21,9 @@ class Timer:
     def __init__(self, name):
         self.name = name
 
-
     def __enter__(self):
         self.start = time.perf_counter()
         return self
-
 
     def __exit__(self, *args):
         self.elapsed = time.perf_counter() - self.start
@@ -37,7 +35,6 @@ class TrainingLogger:
         self.log_dir = Path(repo_root) / "logs" / "detection" / model_subfolder
         self.log_dir.mkdir(parents=True, exist_ok=True)
         self.log_file = self.log_dir / "training_log.txt"
-
 
     def log_metrics(self, metrics: dict):
         with open(self.log_file, "a") as f:
@@ -52,15 +49,13 @@ class RandomForestConeDetector:
         self.scaler = StandardScaler()
         self.model = None
         self.best_params = None
+        self.best_cv_score = None
         self.feature_names = list(feature_names) if feature_names is not None else FEATURE_NAMES
-        # Subfolder under logs/detection and figures/detection
         self.output_name = output_name
-
 
     def cross_validate(self, X_scaled, y, groups, cv_folds=5):
         effective_folds = min(cv_folds, len(np.unique(groups)))
-        print(f'\n🔍 {effective_folds}-Fold Cross-Validation (F1 scoring)...')
-        # n_jobs=1 per model: cross_validate already runs the folds in parallel
+        print(f'\n🔍 {effective_folds}-Fold Cross-Validation (Binary F1 scoring)...')
         rf_temp = RandomForestClassifier(
             **self.best_params,
             random_state=self.random_state,
@@ -70,16 +65,15 @@ class RandomForestConeDetector:
         cv_results = cross_validate(
             rf_temp, X_scaled, y, groups=groups,
             cv=StratifiedGroupKFold(n_splits=effective_folds, shuffle=True, random_state=self.random_state),
-            scoring=['accuracy', 'precision_macro', 'recall_macro', 'f1_macro'],
+            scoring=['accuracy', 'precision', 'recall', 'f1'],
             return_train_score=True, n_jobs=-1
         )
 
-
-        print(f'  CV F1 (Macro): {cv_results["test_f1_macro"].mean():.4f} ± {cv_results["test_f1_macro"].std():.4f}')
-        print(f'  CV Accuracy:   {cv_results["test_accuracy"].mean():.4f} ± {cv_results["test_accuracy"].std():.4f}')
-        print(f'  CV Precision:  {cv_results["test_precision_macro"].mean():.4f} ± {cv_results["test_precision_macro"].std():.4f}')
-        print(f'  CV Recall:     {cv_results["test_recall_macro"].mean():.4f} ± {cv_results["test_recall_macro"].std():.4f}')
-        print(f'  Train F1 Macro:{cv_results["train_f1_macro"].mean():.4f} (overfitting check)')
+        print(f'  CV F1:          {cv_results["test_f1"].mean():.4f} ± {cv_results["test_f1"].std():.4f}')
+        print(f'  CV Accuracy:    {cv_results["test_accuracy"].mean():.4f} ± {cv_results["test_accuracy"].std():.4f}')
+        print(f'  CV Precision:   {cv_results["test_precision"].mean():.4f} ± {cv_results["test_precision"].std():.4f}')
+        print(f'  CV Recall:      {cv_results["test_recall"].mean():.4f} ± {cv_results["test_recall"].std():.4f}')
+        print(f'  Train F1:       {cv_results["train_f1"].mean():.4f} (overfitting check)')
 
         return cv_results
 
@@ -87,6 +81,7 @@ class RandomForestConeDetector:
         rf = RandomForestClassifier(
             random_state=self.random_state,
             class_weight='balanced_subsample',
+            n_jobs=1
         )
 
         global_best_score = -1.0
@@ -94,7 +89,6 @@ class RandomForestConeDetector:
         global_best_estimator = None
         global_best_phase = None
 
-        # Determine effective folds for GroupKFold if groups are provided
         if groups_train is not None:
             n_unique_groups = len(np.unique(groups_train))
             n_splits = min(5, n_unique_groups)
@@ -125,7 +119,7 @@ class RandomForestConeDetector:
             overfit_gap = mean_train_score - mean_cv_score
 
             print(
-                f'   {phase_name} Best F1 Macro (CV): {mean_cv_score:.4f} '
+                f'   {phase_name} Best F1 (CV): {mean_cv_score:.4f} '
                 f'| Train F1: {mean_train_score:.4f} '
                 f'| Overfit Gap: {overfit_gap:.4f}'
             )
@@ -135,7 +129,6 @@ class RandomForestConeDetector:
                 global_best_params = search.best_params_.copy()
                 global_best_estimator = search.best_estimator_
                 global_best_phase = phase_name
-
                 print(f'   ✓ New global best from {phase_name}: {global_best_score:.4f}')
             else:
                 print(f'   ↳ Global best remains: {global_best_score:.4f} from {global_best_phase}')
@@ -158,7 +151,7 @@ class RandomForestConeDetector:
             estimator=rf,
             param_grid=coarse_grid,
             cv=cv_splitter,
-            scoring='f1_macro',
+            scoring='f1',
             n_jobs=-1,
             refit=True,
             return_train_score=True,
@@ -189,7 +182,7 @@ class RandomForestConeDetector:
             estimator=rf,
             param_grid=medium_grid,
             cv=cv_splitter,
-            scoring='f1_macro',
+            scoring='f1',
             n_jobs=-1,
             refit=True,
             return_train_score=True,
@@ -220,7 +213,7 @@ class RandomForestConeDetector:
             estimator=rf,
             param_grid=fine_grid,
             cv=cv_splitter,
-            scoring='f1_macro',
+            scoring='f1',
             n_jobs=-1,
             refit=True,
             return_train_score=True,
@@ -234,14 +227,14 @@ class RandomForestConeDetector:
 
         self.best_params = global_best_params
         self.model = global_best_estimator
+        self.best_cv_score = global_best_score
 
         print('\n✓ Progressive Random Forest GridSearch Complete!')
         print(f'   Winning phase:   {global_best_phase}')
-        print(f'   Best F1 Macro:   {global_best_score:.4f}')
+        print(f'   Best F1:         {global_best_score:.4f}')
         print(f'   Best parameters: {self.best_params}')
 
         return self.model
-
 
     def train(self, X, y, groups, use_gridsearch=True, train_idx=None, test_idx=None):
         if train_idx is None or test_idx is None:
@@ -249,25 +242,20 @@ class RandomForestConeDetector:
                 n_splits=1, test_size=0.2, random_state=self.random_state
             ).split(X, y, groups))
 
-
         X_train, X_test = X[train_idx], X[test_idx]
         y_train, y_test = y[train_idx], y[test_idx]
         groups_train = groups[train_idx]
         groups_test = groups[test_idx]
 
-
         if not set(groups_train).isdisjoint(set(groups_test)):
             raise RuntimeError("Run leakage detected between train and test groups.")
-
 
         print(f'\n[Random Forest Detection Training]')
         print(f'  Train: {len(X_train)} (Cones: {int(y_train.sum())}, Non-cones: {int(len(y_train) - y_train.sum())})')
         print(f'  Test:  {len(X_test)} (Cones: {int(y_test.sum())}, Non-cones: {int(len(y_test) - y_test.sum())})')
 
-
         X_train_scaled = self.scaler.fit_transform(X_train)
         X_test_scaled = self.scaler.transform(X_test)
-
 
         if use_gridsearch:
             self.gridsearch(X_train_scaled, y_train, groups_train)
@@ -281,29 +269,25 @@ class RandomForestConeDetector:
             }
             self.model = RandomForestClassifier(
                 **self.best_params, random_state=self.random_state,
-                class_weight='balanced', n_jobs=-1
+                class_weight='balanced_subsample', n_jobs=-1
             )
             with Timer('Model fit'):
                 self.model.fit(X_train_scaled, y_train)
 
-
         with Timer('Cross-validation'):
             cv_results = self.cross_validate(X_train_scaled, y_train, groups_train)
 
-
         self.plot_feature_correlation(X)
-
 
         y_train_pred = self.model.predict(X_train_scaled)
         y_test_pred = self.model.predict(X_test_scaled)
 
-
-        train_f1 = f1_score(y_train, y_train_pred, average='macro', zero_division=0)
+        train_f1 = f1_score(y_train, y_train_pred, zero_division=0)
         train_accuracy = accuracy_score(y_train, y_train_pred)
         test_acc = accuracy_score(y_test, y_test_pred)
-        test_precision = precision_score(y_test, y_test_pred, average='macro', zero_division=0)
-        test_recall = recall_score(y_test, y_test_pred, average='macro', zero_division=0)
-        test_f1_score = f1_score(y_test, y_test_pred, average='macro', zero_division=0)
+        test_precision = precision_score(y_test, y_test_pred, zero_division=0)
+        test_recall = recall_score(y_test, y_test_pred, zero_division=0)
+        test_f1_score = f1_score(y_test, y_test_pred, zero_division=0)
 
         print(f'\n✓ Evaluation Results:')
         print(f'  Train F1: {train_f1:.2%}')
@@ -312,10 +296,8 @@ class RandomForestConeDetector:
         print(f'  Recall:    {test_recall:.2%}')
         print(f'  F1 Score:  {test_f1_score:.2%}')
 
-
         self.visualize_confusion_matrix(y_test, y_test_pred)
         self.visualize_feature_importances()
-
 
         log_metrics = {
             "dataset_size": len(X),
@@ -327,27 +309,24 @@ class RandomForestConeDetector:
             "recall": float(test_recall),
             "f1_score": float(test_f1_score),
             "best_params": self.best_params,
-            "cv_f1_mean": float(cv_results["test_f1_macro"].mean()),
-            "cv_f1_std": float(cv_results["test_f1_macro"].std()),
+            "cv_f1_mean": float(cv_results["test_f1"].mean()),
+            "cv_f1_std": float(cv_results["test_f1"].std()),
             "feature_importances": {f: float(i) for f, i in zip(self.feature_names, self.model.feature_importances_)},
             "feature_names": self.feature_names,
-            "gridsearch_cv_f1_macro": getattr(self, "best_cv_score", None),
-            "f1_macro": float(f1_score(y_test, y_test_pred, average='macro', zero_division=0)),
+            "gridsearch_cv_f1": getattr(self, "best_cv_score", None),
+            "f1": float(f1_score(y_test, y_test_pred, zero_division=0)),
             "noncone_precision": float(precision_score(y_test, y_test_pred, pos_label=0, zero_division=0)),
             "noncone_recall": float(recall_score(y_test, y_test_pred, pos_label=0, zero_division=0)),
             "confusion_matrix": confusion_matrix(y_test, y_test_pred, labels=[0, 1]).tolist(),
         }
 
-
         logger = TrainingLogger(self.repo_root, self.output_name)
         logger.log_metrics(log_metrics)
         return log_metrics
 
-
     def plot_feature_correlation(self, X):
         feat_df = pd.DataFrame(X, columns=self.feature_names)
         corr = feat_df.corr()
-
 
         n = len(self.feature_names)
         plt.figure(figsize=(max(8, 0.75 * n), max(6, 0.6 * n)))
@@ -355,13 +334,11 @@ class RandomForestConeDetector:
         plt.title('Feature Correlation Matrix - Random Forest', fontsize=14)
         plt.tight_layout()
 
-
         out_dir = self.repo_root / 'figures' / 'detection' / self.output_name
         out_dir.mkdir(parents=True, exist_ok=True)
         plt.savefig(out_dir / 'rf_feature_correlation.png', dpi=300, bbox_inches='tight')
         plt.close()
         print(f'  Saved: {(out_dir / "rf_feature_correlation.png").resolve()}')
-
 
     def visualize_confusion_matrix(self, y_true, y_pred):
         cm = confusion_matrix(y_true, y_pred)
@@ -373,24 +350,20 @@ class RandomForestConeDetector:
         plt.xlabel('Predicted Class')
         plt.tight_layout()
 
-
         out_dir = self.repo_root / 'figures' / 'detection' / self.output_name
         out_dir.mkdir(parents=True, exist_ok=True)
         plt.savefig(out_dir / 'rf_confusion_matrix.png', dpi=300, bbox_inches='tight')
         plt.close()
         print(f'  Saved: {(out_dir / "rf_confusion_matrix.png").resolve()}  (matrix total = {cm.sum()})')
 
-
     def visualize_feature_importances(self):
         importances = self.model.feature_importances_
         df = pd.DataFrame({'feature': self.feature_names, 'importance': importances}).sort_values('importance', ascending=True)
 
-
         plt.figure(figsize=(8, 5))
-        sns.barplot(data=df, x='importance', y='feature', palette='viridis')
+        sns.barplot(data=df, x='importance', y='feature', hue='feature', palette='viridis', legend=False)
         plt.title('Feature Importances - Random Forest')
         plt.tight_layout()
-
 
         out_dir = self.repo_root / 'figures' / 'detection' / self.output_name
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -398,19 +371,14 @@ class RandomForestConeDetector:
         plt.close()
         print(f'  Saved: {(out_dir / "rf_feature_importances.png").resolve()}')
 
-
     def save(self, pkl_path, bin_path):
         Path(pkl_path).parent.mkdir(parents=True, exist_ok=True)
         with open(pkl_path, 'wb') as f:
             pickle.dump({'scaler': self.scaler, 'model': self.model, 'best_params': self.best_params}, f)
 
-
-
         Path(bin_path).parent.mkdir(parents=True, exist_ok=True)
         scaler_mean = self.scaler.mean_.astype(np.float32)
         scaler_std = self.scaler.scale_.astype(np.float32)
-
-
 
         with open(bin_path, 'wb') as f:
             f.write(struct.pack('ii', len(scaler_mean), len(self.model.classes_)))
