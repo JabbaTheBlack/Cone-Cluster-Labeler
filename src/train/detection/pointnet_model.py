@@ -5,7 +5,6 @@ import json
 import random
 from itertools import combinations
 
-
 import numpy as np
 import torch
 import torch.nn as nn
@@ -22,6 +21,18 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 
+def seed_everything(seed=42):
+    """Ensure complete reproducibility across Python, NumPy, and PyTorch (CPU + GPU)."""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+
+    # Enforce deterministic algorithm choices in PyTorch
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
 
 class TNet(nn.Module):
     """Spatial Transformer Network (T-Net) for point alignment."""
@@ -35,13 +46,11 @@ class TNet(nn.Module):
         self.fc2 = nn.Linear(512, 256)
         self.fc3 = nn.Linear(256, k * k)
 
-
         self.bn1 = nn.BatchNorm1d(64)
         self.bn2 = nn.BatchNorm1d(128)
         self.bn3 = nn.BatchNorm1d(1024)
         self.bn4 = nn.BatchNorm1d(512)
         self.bn5 = nn.BatchNorm1d(256)
-
 
     def forward(self, x):
         batchsize = x.size(0)
@@ -51,7 +60,6 @@ class TNet(nn.Module):
         x = torch.max(x, 2, keepdim=True)[0]
         x = x.view(-1, 1024)
 
-
         x = F.relu(self.bn4(self.fc1(x)))
         x = F.relu(self.bn5(self.fc2(x)))
         init = torch.eye(self.k, device=x.device).view(1, self.k * self.k).repeat(batchsize, 1)
@@ -59,15 +67,11 @@ class TNet(nn.Module):
         return matrix.view(-1, self.k, self.k)
 
 
-
 class PointNetClassifier(nn.Module):
     """PointNet classification network operating on raw point clusters (B, in_dim, N).
 
-    arch="modified": the original implementation of this repo (4x4 input T-Net over x, y, z and
-    intensity, one 64-wide layer before the feature T-Net).
-    arch="paper": as in Qi et al. 2017 — 3x3 input T-Net on x, y, z only (extra channels such
-    as intensity are appended after the transform), two 64-wide layers before the feature
-    T-Net, and `trans_feat` is kept for the orthogonality regulariser."""
+    arch="modified": 4x4 input T-Net over x, y, z and intensity.
+    arch="paper": 3x3 input T-Net on x, y, z only, two 64-wide layers before feature T-Net."""
     def __init__(self, num_classes=2, in_dim=4, arch="modified", dropout=0.3):
         super(PointNetClassifier, self).__init__()
         if arch not in ("modified", "paper"):
@@ -76,11 +80,9 @@ class PointNetClassifier(nn.Module):
         self.tnet_input = TNet(k=3 if arch == "paper" else in_dim)
         self.tnet_feature = TNet(k=64)
 
-
         self.conv1 = nn.Conv1d(in_dim, 64, 1)
         self.conv2 = nn.Conv1d(64, 128, 1)
         self.conv3 = nn.Conv1d(128, 1024, 1)
-
 
         self.bn1 = nn.BatchNorm1d(64)
         self.bn2 = nn.BatchNorm1d(128)
@@ -89,20 +91,16 @@ class PointNetClassifier(nn.Module):
             self.conv1b = nn.Conv1d(64, 64, 1)
             self.bn1b = nn.BatchNorm1d(64)
 
-
         self.fc1 = nn.Linear(1024, 512)
         self.fc2 = nn.Linear(512, 256)
         self.fc3 = nn.Linear(256, num_classes)
-
 
         self.dropout = nn.Dropout(p=dropout)
         self.bn_fc1 = nn.BatchNorm1d(512)
         self.bn_fc2 = nn.BatchNorm1d(256)
         self.trans_feat = None
 
-
     def forward(self, x):
-        # x shape: (B, in_dim, N)
         if self.arch == "paper":
             xyz = torch.bmm(self.tnet_input(x[:, :3]), x[:, :3])
             x = torch.cat([xyz, x[:, 3:]], dim=1)
@@ -110,28 +108,23 @@ class PointNetClassifier(nn.Module):
             trans_input = self.tnet_input(x)
             x = torch.bmm(trans_input, x)
 
-
         x = F.relu(self.bn1(self.conv1(x)))
         if self.arch == "paper":
             x = F.relu(self.bn1b(self.conv1b(x)))
 
-
         trans_feat = self.tnet_feature(x)
         self.trans_feat = trans_feat
         x = torch.bmm(trans_feat, x)
-
 
         x = F.relu(self.bn2(self.conv2(x)))
         x = self.bn3(self.conv3(x))
         x = torch.max(x, 2, keepdim=True)[0]
         x = x.view(-1, 1024)
 
-
         x = F.relu(self.bn_fc1(self.fc1(x)))
         x = F.relu(self.bn_fc2(self.dropout(self.fc2(x))))
         x = self.fc3(x)
         return x
-
 
 
 def feature_transform_regularizer(trans):
@@ -140,13 +133,11 @@ def feature_transform_regularizer(trans):
     return torch.mean(torch.norm(identity - torch.bmm(trans, trans.transpose(2, 1)), dim=(1, 2)) ** 2)
 
 
-
 class FocalLoss(nn.Module):
     def __init__(self, alpha=None, gamma=2.0):
         super().__init__()
         self.alpha = alpha
         self.gamma = gamma
-
 
     def forward(self, inputs, targets):
         ce = F.cross_entropy(inputs, targets, reduction="none")
@@ -156,12 +147,8 @@ class FocalLoss(nn.Module):
         return focal.mean()
 
 
-
 class PointCloudDataset(Dataset):
-    """Centred xyz + per-cluster min-max intensity, resampled to num_points on every access.
-
-    With augment=True each __getitem__ draws a fresh sample and jitter, so every epoch sees
-    a different version of the cluster; without it the sample is fixed per index."""
+    """Centred xyz + range-power normalized intensity, resampled to num_points on every access."""
 
     def __init__(self, raw_clouds, labels, num_points=32, augment=False, seed=42, use_intensity=True):
         self.num_points = num_points
@@ -172,30 +159,31 @@ class PointCloudDataset(Dataset):
         self.data = [self._normalize(points) for points in raw_clouds]
         self.rng = np.random.default_rng(seed)
 
-
     def _normalize(self, points):
         points = np.asarray(points, dtype=np.float32)
         if points.ndim != 2 or points.shape[1] < 3 or len(points) == 0:
             return np.zeros((1, 4 if self.use_intensity else 3), dtype=np.float32)
 
+        raw_xyz = points[:, :3]
+        distances = np.linalg.norm(raw_xyz, axis=1, keepdims=True)
+        xyz_centered = raw_xyz - raw_xyz.mean(axis=0, keepdims=True)
+
+        if not self.use_intensity:
+            return xyz_centered.astype(np.float32)
 
         if points.shape[1] >= 4:
-            intensity = points[:, 3:4]
+            raw_intensity = points[:, 3:4]
         else:
-            intensity = np.zeros((len(points), 1), dtype=np.float32)
+            raw_intensity = np.zeros((len(points), 1), dtype=np.float32)
 
+        i_normalized = np.clip(raw_intensity / 255.0, 0.0, 1.0)
+        range_factor = (np.maximum(distances, 0.5) / 10.0) ** 2
+        intensity = i_normalized * range_factor
 
-        xyz = points[:, :3] - points[:, :3].mean(axis=0, keepdims=True)
-        if not self.use_intensity:
-            return xyz.astype(np.float32)
-        i_min, i_max = intensity.min(), intensity.max()
-        intensity = (intensity - i_min) / (i_max - i_min + 1e-8) if i_max > i_min else np.zeros_like(intensity)
-        return np.hstack((xyz, intensity)).astype(np.float32)
-
+        return np.hstack((xyz_centered, intensity)).astype(np.float32)
 
     def __len__(self):
         return len(self.labels)
-
 
     def __getitem__(self, index):
         points = self.data[index]
@@ -203,20 +191,18 @@ class PointCloudDataset(Dataset):
         if len(points) >= self.num_points:
             sample_indices = rng.choice(len(points), self.num_points, replace=False)
         else:
-            # Keep every real point and pad with repeats; max pooling ignores the repeats
-            sample_indices = np.concatenate([np.arange(len(points)),
-                                             rng.choice(len(points), self.num_points - len(points))])
+            sample_indices = np.concatenate([
+                np.arange(len(points)),
+                rng.choice(len(points), self.num_points - len(points))
+            ])
         sampled = points[sample_indices].T.copy()
-
 
         if self.augment:
             sampled[:3] += rng.normal(0.0, 0.01, sampled[:3].shape).astype(np.float32)
             if self.use_intensity:
                 sampled[3] *= rng.uniform(0.8, 1.2)
 
-
         return torch.from_numpy(sampled), torch.tensor(self.labels[index], dtype=torch.long)
-
 
 
 class TrainingLogger:
@@ -225,11 +211,9 @@ class TrainingLogger:
         self.log_dir.mkdir(parents=True, exist_ok=True)
         self.log_file = self.log_dir / "training_log.txt"
 
-
     def log_metrics(self, metrics):
         with self.log_file.open("a", encoding="utf-8") as file:
             file.write(json.dumps(metrics) + "\n")
-
 
 
 def _evaluate(model, loader, device):
@@ -243,13 +227,11 @@ def _evaluate(model, loader, device):
     return np.asarray(labels), np.asarray(predictions)
 
 
-
 def _save_confusion_matrix(y_true, y_pred, label_encoder, repo_root, model_name="pointnet", output_name="pointnet"):
     labels = list(label_encoder.classes_) if label_encoder is not None else ["0", "1"]
     matrix = confusion_matrix(y_true, y_pred, labels=np.arange(len(labels)))
     output_dir = Path(repo_root) / "figures" / "detection" / output_name
     output_dir.mkdir(parents=True, exist_ok=True)
-
 
     plt.figure(figsize=(6, 5))
     sns.heatmap(matrix, annot=True, fmt="d", cmap="Blues", xticklabels=labels, yticklabels=labels)
@@ -261,17 +243,10 @@ def _save_confusion_matrix(y_true, y_pred, label_encoder, repo_root, model_name=
     plt.close()
 
 
-
 def train_pointnet(train_dataset, val_dataset, num_classes, in_dim, device, arch="modified", dropout=0.3,
                    epochs=150, batch_size=32, learning_rate=1e-3, lr_step=0, weight_decay=0.0,
-                   loss="focal", reg_weight=0.0, patience=15, min_delta=1e-4, verbose=True):
-    """Train one PointNet. With val_dataset, stop early on validation loss and restore the best
-    epoch; without it, train for exactly `epochs` epochs.
-
-    lr_step > 0 halves the learning rate every lr_step epochs (as in the paper); reg_weight
-    scales the feature-transform orthogonality loss (paper: 0.001); loss is "focal"
-    (class-weighted focal loss, this repo's original choice) or "ce" (class-weighted
-    cross-entropy)."""
+                   loss="focal", reg_weight=0.0, patience=15, min_delta=1e-4, verbose=True, seed=42):
+    """Train one PointNet model with early stopping."""
     model = PointNetClassifier(num_classes=num_classes, in_dim=in_dim, arch=arch, dropout=dropout).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=lr_step, gamma=0.5) if lr_step else None
@@ -280,11 +255,12 @@ def train_pointnet(train_dataset, val_dataset, num_classes, in_dim, device, arch
     weights /= weights.sum()
     criterion = FocalLoss(alpha=weights) if loss == "focal" else nn.CrossEntropyLoss(weight=weights * num_classes)
 
+    g = torch.Generator()
+    g.manual_seed(seed)
 
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, generator=g)
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False) if val_dataset is not None else None
     best_val_loss, best_epoch, best_state, wait = float("inf"), 0, None, 0
-
 
     for epoch in range(epochs):
         model.train()
@@ -302,13 +278,11 @@ def train_pointnet(train_dataset, val_dataset, num_classes, in_dim, device, arch
             scheduler.step()
         avg_loss = running_loss / len(train_dataset)
 
-
         if val_loader is None:
             if verbose and ((epoch + 1) % 10 == 0 or epoch == 0 or epoch + 1 == epochs):
                 print(f"  Epoch {epoch + 1:03d}/{epochs}: train_loss={avg_loss:.5f}")
             best_epoch = epoch
             continue
-
 
         model.eval()
         val_loss = 0.0
@@ -320,7 +294,6 @@ def train_pointnet(train_dataset, val_dataset, num_classes, in_dim, device, arch
         if verbose and ((epoch + 1) % 10 == 0 or epoch == 0):
             print(f"  Epoch {epoch + 1:03d}/{epochs}: train_loss={avg_loss:.5f}, val_loss={val_loss:.5f}")
 
-
         if val_loss < best_val_loss - min_delta:
             best_val_loss, best_epoch, wait = val_loss, epoch, 0
             best_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
@@ -331,7 +304,6 @@ def train_pointnet(train_dataset, val_dataset, num_classes, in_dim, device, arch
                     print(f"  Early stopping at epoch {epoch + 1} (best: {best_epoch + 1}, val_loss={best_val_loss:.5f})")
                 break
 
-
     if best_state is not None:
         model.load_state_dict(best_state)
         if verbose:
@@ -339,10 +311,8 @@ def train_pointnet(train_dataset, val_dataset, num_classes, in_dim, device, arch
     return model, best_epoch, best_val_loss, epoch + 1
 
 
-
 def _balanced_group_split(y, groups, min_ratio=0.08, max_ratio=0.20):
-    """Pick validation tracks whose size is within [min_ratio, max_ratio] of the samples and
-    whose non-cone share best matches the remaining tracks (ties: more non-cones)."""
+    """Pick validation tracks whose size is within [min_ratio, max_ratio] of samples."""
     unique_groups = np.unique(groups)
     best = None
     for k in range(1, len(unique_groups)):
@@ -358,7 +328,6 @@ def _balanced_group_split(y, groups, min_ratio=0.08, max_ratio=0.20):
         raise RuntimeError("No validation track combination satisfies the size and class constraints.")
     is_val = best[1]
     return np.where(~is_val)[0], np.where(is_val)[0]
-
 
 
 def run_pointnet_pipeline(
@@ -385,35 +354,23 @@ def run_pointnet_pipeline(
     loss="focal",
     reg_weight=0.0,
 ):
-    """Train, evaluate, log and export the PointNet detection model with early stopping.
-
-    Early stopping uses a validation split carved out of the training tracks, so the
-    test tracks are only touched for the final evaluation. With use_validation=False the
-    model trains on all training tracks for exactly `epochs` epochs (e.g. the best epoch
-    found by an earlier validated run)."""
+    """Train, evaluate, log and export PointNet detection model deterministically."""
     if len(raw_clouds) != len(y) or len(raw_clouds) == 0:
         raise ValueError("raw_clouds and y must be non-empty and have equal length")
 
-
-    # Ensure epochs is a valid int even if caller passes None
     if epochs is None:
         epochs = 150
     epochs = int(epochs)
 
-
-    random.seed(random_state)
-    np.random.seed(random_state)
-    torch.manual_seed(random_state)
-
+    # Enforce global deterministic seeds
+    seed_everything(random_state)
 
     if train_idx is None or test_idx is None:
         raise ValueError("train_idx and test_idx must be provided by the grouped dataset split.")
 
-
     raw_clouds = list(raw_clouds)
     y = np.asarray(y)
     groups = np.asarray(groups)
-
 
     if use_validation:
         fit_pos, val_pos = _balanced_group_split(y[train_idx], groups[train_idx])
@@ -428,29 +385,25 @@ def run_pointnet_pipeline(
     y_val = y[val_idx]
     y_test = y[test_idx]
 
-
     for a, b in [(fit_idx, val_idx), (fit_idx, test_idx), (val_idx, test_idx)]:
         if not set(groups[a]).isdisjoint(set(groups[b])):
             raise RuntimeError("Run leakage detected between train/validation/test groups.")
-
 
     classes = np.unique(y)
     train_counts = {str(cls): int((y_train == cls).sum()) for cls in classes}
     val_counts = {str(cls): int((y_val == cls).sum()) for cls in classes}
     test_counts = {str(cls): int((y_test == cls).sum()) for cls in classes}
 
-
     train_dataset = PointCloudDataset(clouds_train, y_train, num_points, augment=True, seed=random_state, use_intensity=use_intensity)
     train_eval_dataset = PointCloudDataset(clouds_train, y_train, num_points, augment=False, seed=random_state, use_intensity=use_intensity)
     val_dataset = PointCloudDataset(clouds_val, y_val, num_points, augment=False, seed=random_state, use_intensity=use_intensity)
     test_dataset = PointCloudDataset(clouds_test, y_test, num_points, augment=False, seed=random_state, use_intensity=use_intensity)
+
     train_eval_loader = DataLoader(train_eval_dataset, batch_size=batch_size, shuffle=False)
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
-
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     in_dim = 4 if use_intensity else 3
-
 
     print("\n[PointNet Detection Training]")
     print(f"  Device: {device} | arch: {arch} | input channels: {'x, y, z, intensity' if use_intensity else 'x, y, z'} | seed: {random_state}")
@@ -462,15 +415,13 @@ def run_pointnet_pipeline(
     else:
         print(f"  No validation: training on all training tracks for {epochs} epochs")
 
-
     model, best_epoch, best_val_loss, epochs_trained = train_pointnet(
         train_dataset, val_dataset if use_validation else None, num_classes=len(classes), in_dim=in_dim,
         device=device, arch=arch, dropout=dropout, epochs=epochs, batch_size=batch_size,
         learning_rate=learning_rate, lr_step=lr_step, weight_decay=weight_decay, loss=loss,
-        reg_weight=reg_weight, patience=patience, min_delta=min_delta,
+        reg_weight=reg_weight, patience=patience, min_delta=min_delta, seed=random_state
     )
     epoch = epochs_trained - 1
-
 
     y_train_true, y_train_pred = _evaluate(model, train_eval_loader, device)
     y_test_true, y_test_pred = _evaluate(model, test_loader, device)
@@ -486,14 +437,15 @@ def run_pointnet_pipeline(
         "val_class_counts": val_counts,
         "test_class_counts": test_counts,
         "train_accuracy": float(accuracy_score(y_train_true, y_train_pred)),
+        "train_f1_macro": float(f1_score(y_train_true, y_train_pred, average="macro", zero_division=0)),
         "test_accuracy": float(accuracy_score(y_test_true, y_test_pred)),
-        # Same fields as the RF/XGB logs: precision/recall/f1_score are for the cone class
-        "precision": float(precision_score(y_test_true, y_test_pred, zero_division=0)),
-        "recall": float(recall_score(y_test_true, y_test_pred, zero_division=0)),
-        "f1_score": float(f1_score(y_test_true, y_test_pred, zero_division=0)),
+        "precision": float(precision_score(y_test_true, y_test_pred, pos_label=1, zero_division=0)),
+        "recall": float(recall_score(y_test_true, y_test_pred, pos_label=1, zero_division=0)),
+        "f1_score": float(f1_score(y_test_true, y_test_pred, pos_label=1, zero_division=0)),
         "f1_macro": float(f1_score(y_test_true, y_test_pred, average="macro", zero_division=0)),
         "noncone_precision": float(precision_score(y_test_true, y_test_pred, pos_label=0, zero_division=0)),
         "noncone_recall": float(recall_score(y_test_true, y_test_pred, pos_label=0, zero_division=0)),
+        "noncone_f1_score": float(f1_score(y_test_true, y_test_pred, pos_label=0, zero_division=0)),
         "confusion_matrix": confusion_matrix(y_test_true, y_test_pred, labels=[0, 1]).tolist(),
         "best_val_loss": float(best_val_loss) if use_validation else None,
         "use_validation": use_validation,
@@ -508,11 +460,15 @@ def run_pointnet_pipeline(
         "num_points": num_points,
     }
 
-
     print("\n--- PointNet Detection Metrics ---")
-    for key in ("train_accuracy", "test_accuracy", "precision", "recall", "f1_score", "f1_macro", "noncone_recall"):
-        print(f"  {key}: {metrics[key]:.2%}")
-
+    print(f"  Train Accuracy: {metrics['train_accuracy']:.2%}")
+    print(f"  Train F1 (Macro):{metrics['train_f1_macro']:.2%}")
+    print(f"  Test Accuracy:  {metrics['test_accuracy']:.2%}")
+    print(f"  Precision:      {metrics['precision']:.2%}")
+    print(f"  Recall:         {metrics['recall']:.2%}")
+    print(f"  F1 Score (Cone):{metrics['f1_score']:.2%}")
+    print(f"  F1 Score (Macro):{metrics['f1_macro']:.2%}")
+    print(f"  Non-cone Recall:{metrics['noncone_recall']:.2%}")
 
     _save_confusion_matrix(y_test_true, y_test_pred, None, repo_root, model_name="pointnet", output_name=output_name)
     save_dir = Path(repo_root) / "models" / "detection" / output_name
@@ -520,14 +476,20 @@ def run_pointnet_pipeline(
     torch.save({"state_dict": model.state_dict(), "num_classes": len(classes), "num_points": num_points,
                 "in_dim": in_dim, "use_intensity": use_intensity, "arch": arch}, save_dir / "pointnet_detection.pth")
 
-
     model_cpu = model.to("cpu").eval()
     dummy_input = torch.randn(1, in_dim, num_points)
     try:
-        torch.onnx.export(model_cpu, dummy_input, save_dir / "pointnet_detection.onnx", input_names=["input"], output_names=["output"], opset_version=17)
-    except Exception as error:  # e.g. the onnx package is missing; the .pth is already saved
+        torch.onnx.export(
+            model_cpu,
+            dummy_input,
+            save_dir / "pointnet_detection.onnx",
+            input_names=["input"],
+            output_names=["output"],
+            opset_version=18,
+            dynamo=False,
+        )
+    except Exception as error:
         print(f"  ONNX export skipped: {error}")
-
 
     metrics["labels"] = [str(label) for label in classes]
     TrainingLogger(repo_root, model_subfolder=output_name).log_metrics(metrics)
